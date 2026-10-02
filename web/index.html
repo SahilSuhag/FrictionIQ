@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FrictionIQ</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="synthetic-banner" role="note">
+    <strong>Synthetic data.</strong> Every client, rule hit and fraud case on these screens was generated for demonstration
+    (seed <span id="seed"></span>). No real clients, people or payments. Weights are placeholders.
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◐</span>
+      <div>
+        <div class="brand-name">FrictionIQ</div>
+        <div class="brand-sub">What our controls cost the client, attributed to the rule that caused it</div>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-view="explorer" aria-selected="true">Rule tradeoff explorer</button>
+      <button role="tab" data-view="client" aria-selected="false">Client friction detail</button>
+      <button role="tab" data-view="portfolio" aria-selected="false">Portfolio</button>
+    </nav>
+    <div class="topbar-right">
+      <span class="asof">As of <span id="asof"></span></span>
+      <button id="theme-toggle" class="ghost" title="Toggle light/dark">◑</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- 1. Rule tradeoff explorer -->
+    <section id="view-explorer" class="view" aria-label="Rule tradeoff explorer">
+      <aside class="rule-list" id="rule-list" aria-label="Rules"></aside>
+      <div class="explorer-main">
+        <div class="rule-head">
+          <div>
+            <h1 id="rule-title"></h1>
+            <div class="rule-meta" id="rule-meta"></div>
+          </div>
+          <div class="policy-toggle" role="radiogroup" aria-label="Apply relaxed threshold to">
+            <span class="muted">Apply relaxed threshold to</span>
+            <button data-policy="global" aria-pressed="true">Everyone</button>
+            <button data-policy="segment" aria-pressed="false">Established, high-friction clients only</button>
+          </div>
+        </div>
+        <div class="verdict" id="verdict"></div>
+
+        <div class="curve-wrap">
+          <div class="curve-chart" id="curve-chart"></div>
+          <div class="figures">
+            <div class="figure">
+              <div class="figure-label">Friction removed</div>
+              <div class="figure-value" id="fig-friction"></div>
+              <div class="figure-sub" id="fig-friction-sub"></div>
+            </div>
+            <div class="figure">
+              <div class="figure-label">Fraud this rule still catches</div>
+              <div class="figure-value" id="fig-fraud"></div>
+              <div class="figure-sub" id="fig-fraud-sub"></div>
+            </div>
+            <div class="figure small">
+              <div class="figure-label">Distribution check</div>
+              <div class="figure-sub" id="fig-dist"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="slider-row">
+          <label for="threshold" class="muted">Threshold</label>
+          <input type="range" id="threshold" min="0" max="1" step="1" value="0">
+          <code id="expr-live" class="expr"></code>
+        </div>
+
+        <p class="statement" id="statement" aria-live="polite"></p>
+
+        <div class="below-curve">
+          <div class="card">
+            <h3>Fires vs. friction inflicted</h3>
+            <div id="fire-stats"></div>
+          </div>
+          <div class="card">
+            <h3>Path to production</h3>
+            <div id="shadow-path"></div>
+          </div>
+        </div>
+        <details class="card table-toggle">
+          <summary>Curve data table</summary>
+          <div id="curve-table"></div>
+        </details>
+      </div>
+    </section>
+
+    <!-- 2. Client friction detail -->
+    <section id="view-client" class="view" hidden aria-label="Client friction detail">
+      <div class="client-picker">
+        <label for="client-search" class="muted">Client</label>
+        <input id="client-search" list="client-options" placeholder="Search by name or ID">
+        <datalist id="client-options"></datalist>
+        <div class="quick-picks" id="quick-picks"></div>
+      </div>
+      <div class="client-head" id="client-head"></div>
+      <div class="tiles" id="client-tiles"></div>
+      <div class="client-grid">
+        <div class="card span-2">
+          <h3>Every intervention, tagged with the rule that caused it <span class="muted">· 90 days</span></h3>
+          <div id="timeline"></div>
+        </div>
+        <div class="card">
+          <h3>Explanation <span class="pill">Operations only — not for clients</span></h3>
+          <div id="client-explain"></div>
+        </div>
+        <div class="card">
+          <h3>Good-client evidence <span class="pill">Proposal, not validated</span></h3>
+          <div id="client-evidence"></div>
+        </div>
+        <div class="card span-2">
+          <h3>Attribution <span class="muted">· last 30 days, prevailing hits only</span></h3>
+          <div id="client-attr"></div>
+        </div>
+        <details class="card span-2 table-toggle">
+          <summary>All logged hits (prevailing, contributing, shadow, overridden)</summary>
+          <div id="client-hits"></div>
+        </details>
+      </div>
+    </section>
+
+    <!-- 3. Portfolio -->
+    <section id="view-portfolio" class="view" hidden aria-label="Portfolio view">
+      <div class="tiles" id="portfolio-tiles"></div>
+      <div class="card">
+        <h3>Friction distribution by good-client band <span class="muted">· 30-day index, placeholder weights · click a client</span></h3>
+        <div id="swarm"></div>
+      </div>
+      <div class="portfolio-grid">
+        <div class="card"><h3>Friction by checkpoint <span class="muted">· 30 days</span></h3><div id="by-checkpoint"></div></div>
+        <div class="card"><h3>Friction by merchant type <span class="muted">· 30 days</span></h3><div id="by-entity"></div></div>
+      </div>
+      <div class="card">
+        <h3>Success metrics <span class="muted">· whole synthetic population, not the curated cases</span></h3>
+        <div id="metrics"></div>
+      </div>
+      <details class="card table-toggle">
+        <summary>Weighting configuration (placeholders, swept)</summary>
+        <div id="config"></div>
+      </details>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+
+  <script src="data/frictioniq.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

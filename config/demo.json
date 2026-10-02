@@ -1,0 +1,7 @@
+{
+  "_comment": "Presentation only: which clients and rules the three-minute demo walks through. The analysis does not read this.",
+  "open_client": "CL-0001",
+  "hero_rule": "R01",
+  "negative_rule": "R02",
+  "guardrail_client": "CL-0003"
+}

@@ -1,0 +1,37 @@
+{
+  "_notice": "PLACEHOLDER values. Not elicited, not validated. Shown on screen as placeholders; every conclusion is reported across the sweep ranges below, never at this single point.",
+
+  "decision_weights": {
+    "SHADOW": 0,
+    "SETTLEMENT_LIMIT": 10,
+    "RESTRICT": 15,
+    "HOLD": 25,
+    "DENY": 40,
+    "BLOCK": 70,
+    "TERMINATE": 100
+  },
+  "half_life_days": 30,
+  "reference_hours": 4,
+  "duration_shape": "log",
+  "saturating_cap_hours": 48,
+  "incident_severity_weights": { "SEV1": 50, "SEV2": 30, "SEV3": 15 },
+
+  "weighting_sweep": {
+    "_comment": "Anchor A: sample weight vectors consistent with the intervention ordering (settlement limit < restriction < hold < deny < block < termination) and run the analysis at every one.",
+    "n_samples": 300,
+    "seed": 7,
+    "half_life_days": [14, 60],
+    "reference_hours": [1, 24],
+    "duration_shapes": ["log", "saturating"]
+  },
+
+  "good_client": {
+    "_comment": "A proposal for discussion with Risk Strategy, not a validated construct. Confirmed fraud is a disqualifier, never a score.",
+    "established": { "min_tenure_months": 24, "min_clear_rate": 0.9, "max_overdispersion": 0.45, "max_chargeback_rate": 0.02 },
+    "developing": { "min_tenure_months": 12, "min_clear_rate": 0.75, "max_chargeback_rate": 0.03 }
+  },
+
+  "threshold_steps": 40,
+  "high_friction_percentile": 75,
+  "score_windows_days": [7, 30]
+}
