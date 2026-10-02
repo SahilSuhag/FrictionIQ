@@ -112,7 +112,7 @@
     }
     if (view === "client" && arg && clientById[arg]) state.clientId = arg;
     const hash = view === "explorer" ? `#explorer/${state.ruleId}` : view === "client" ? `#client/${state.clientId}` : "#portfolio";
-    if (push && location.hash !== hash) history.pushState(null, "", hash);
+    if (push && location.hash !== hash) { try { history.pushState(null, "", hash); } catch (e) { /* sandboxed frame */ } }
     render();
     window.scrollTo({ top: 0 });
   }
