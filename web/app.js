@@ -414,6 +414,7 @@
         <tfoot><tr><th scope="row">All grades</th>${foot}<td class="gtot">${cellBtn(total, "|", `All ${total} clients`)}</td></tr></tfoot>
       </table></div>
       <p class="card-note grid-key"><span class="key-box"></span>Established clients graded ${HEAVY.join(" or ")}: good clients carrying heavy friction (${fmtInt(P.good_clients_heavy_friction)})</p>
+      <div id="cell-list" class="cell-list" role="region" aria-live="polite"></div>
     </section>`;
   }
   function cellTitle(cell) {
@@ -427,16 +428,15 @@
     const e = Object.entries(w.by_rule).sort((x, y) => y[1].count - x[1].count || y[1].score - x[1].score)[0];
     return e ? { rule: e[0], count: e[1].count } : null;
   }
+  // The list opens inline under the grid, so the number that was clicked stays in view.
   function openCell(cell, focus) {
-    closeCell(false);
+    const panel = document.getElementById("cell-list");
+    if (!panel) return;
     state.cell = cell;
+    const [g] = cell.split("|");
     const list = inCell(cell).sort((x, y) => y.windows[state.win].n - x.windows[state.win].n || y.windows[state.win].score[0] - x.windows[state.win].score[0]);
-    const panel = document.createElement("div");
-    panel.className = "cell-panel";
-    panel.id = "cell-panel";
-    panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-labelledby", "cell-title");
-    panel.innerHTML = `<div class="cp-head"><div><h3 id="cell-title" tabindex="-1">${cellTitle(cell)}</h3>
+    panel.innerHTML = `<div class="cp-head"><div><h3 id="cell-title" tabindex="-1">${g ? `<span class="grade-badge sm" style="background:${gradeColor(g)}">${g}</span> ` : ""}${cellTitle(cell)}</h3>
         <div class="card-sub">${fmtInt(list.length)} client${list.length === 1 ? "" : "s"} · ${W().phrase} · most interventions first</div></div>
         <button type="button" class="cp-close" aria-label="Close the list">×</button></div>
       <div class="cp-body"><table class="cp-table"><thead><tr><th>Client</th><th class="c">Transactions ${info("txn", "What counts as a transaction")}</th><th class="c">Transaction value</th><th class="c">Interventions</th><th>Rule causing most</th></tr></thead>
@@ -446,19 +446,26 @@
           <td class="c" data-label="Transactions">${fmtInt(w.txn[0])}</td><td class="c" data-label="Value">${fmtUsd(w.txn[1])}</td><td class="c" data-label="Interventions"><b>${fmtInt(w.n)}</b></td>
           <td class="nowrap" data-label="Rule causing most">${t ? `<a href="#rule/${t.rule}" data-rule="${t.rule}">${t.rule}</a> <span class="muted">· ${t.count} of ${w.n}</span>` : '<span class="muted">none</span>'}</td></tr>`;
       }).join("")}</tbody></table></div>`;
-    view.appendChild(panel);
     wireInfo(panel);
     panel.querySelector(".cp-close").onclick = () => closeCell(true);
     panel.querySelectorAll("[data-client]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); go("#client/" + a.dataset.client); }));
     panel.querySelectorAll("[data-rule]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); go("#rule/" + a.dataset.rule); }));
     view.querySelectorAll(".cell-btn").forEach((b) => b.classList.toggle("active", b.dataset.cell === cell));
-    if (focus) panel.querySelector("#cell-title").focus();
+    if (focus) {
+      panel.querySelector("#cell-title").focus({ preventScroll: true });
+      // bring the list into view, but never scroll the clicked number under the top bar
+      const btn = view.querySelector(`.cell-btn[data-cell="${cell}"]`);
+      const head = panel.getBoundingClientRect().top, room = Math.min(260, innerHeight * 0.4);
+      const by = Math.min(head - (innerHeight - room), (btn ? btn.getBoundingClientRect().top : head) - 76);
+      if (by > 0) window.scrollBy({ top: by, behavior: "smooth" });
+    }
   }
   function closeCell(restoreFocus) {
-    const panel = document.getElementById("cell-panel");
-    if (!panel) { state.cell = null; return; }
+    const panel = document.getElementById("cell-list");
     const cell = state.cell;
-    panel.remove();
+    if (!panel || !cell) { state.cell = null; return; }
+    panel.innerHTML = "";
+    panel.removeAttribute("aria-labelledby");
     state.cell = null;
     hideTip();
     view.querySelectorAll(".cell-btn.active").forEach((b) => b.classList.remove("active"));
@@ -1173,7 +1180,7 @@
     go(h === "#client" ? "#client/" + state.clientId : h === "#rule" ? "#rule/" + state.ruleId : h);
   });
   window.addEventListener("popstate", () => route(location.hash));
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.getElementById("cell-panel")) closeCell(true); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.cell && document.getElementById("cell-list")) closeCell(true); });
   window.addEventListener("hashchange", () => { if (location.hash !== routed) route(location.hash); });
   let rt;
   window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 150); });
