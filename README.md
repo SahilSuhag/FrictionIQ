@@ -35,11 +35,11 @@ window selector and the threshold slider respond instantly.
 
 ## The three screens
 
-They follow the Figma designs' layout and content, in Open Sans, restyled in a lavender
-palette: Pale Grey `#FEFDFE` cards on a Diamond Cut `#EBE9F1` page, Italian Fitch `#D1C8E7` and
-Mithril Silver `#BCB9C1` for quiet data, Purple Anemone `#8B67F2` for friction and the rule at
-fault, and Dark Drama `#5A3A38` for fraud. The A–F grade colours stay as the mock has them. Each
-screen has a 30 days / 60 days / 1 year window.
+They follow the Figma designs' layout and content, in Open Sans, on a white page with thin-bordered
+cards. Colours: Fuchsian purple `#6F42C1` for friction, the rule at fault and actions; Aquamarine
+Blue `#007BFF` for fraud (fraud saved and lost, fraud still caught); teal `#17A2B8` for what is safe
+to relax. The A–F grade colours stay as the mock has them, including the tints in the count grid.
+Each screen has a 30 days / 60 days / 1 year window.
 
 Each screen is kept to a few headline numbers. Every concept is shown once, and supporting detail
 sits behind a disclosure (**Details**, **How it's calculated**, **Method and success metrics**).

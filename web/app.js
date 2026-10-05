@@ -799,12 +799,12 @@
       if (nb.x < m.l) nf.setAttribute("x", (a + b) / 2 + (m.l - nb.x));
       txt(svg, xs(up ? hi : lo) + (up ? -2 : 2), m.t - 6, "confirmed fraud", { "text-anchor": up ? "end" : "start" });
     }
-    el("line", { x1: xs(today), x2: xs(today), y1: m.t - 2, y2: H - m.b, stroke: "var(--drama)", "stroke-width": 2 }, svg);
+    el("line", { x1: xs(today), x2: xs(today), y1: m.t - 2, y2: H - m.b, stroke: "var(--ink)", "stroke-width": 2 }, svg);
     if (proposed != null) el("line", { x1: xs(proposed), x2: xs(proposed), y1: m.t, y2: H - m.b, stroke: "var(--ink)", "stroke-width": 1.5, "stroke-dasharray": "2 3" }, svg);
     el("line", { x1: m.l, x2: width - m.r, y1: H - m.b, y2: H - m.b, class: "axis" }, svg);
     // fraud diamonds (a sample, spread so they read as a cluster)
     const fs = fraud.length > 24 ? fraud.filter((_, i) => i % Math.ceil(fraud.length / 24) === 0) : fraud;
-    fs.forEach((v, i) => { const x = xs(v), y = yMid + ((i % 3) - 1) * 9; el("path", { d: `M${x},${y - 4.5} l4.5,4.5 l-4.5,4.5 l-4.5,-4.5z`, fill: "var(--drama)" }, svg); });
+    fs.forEach((v, i) => { const x = xs(v), y = yMid + ((i % 3) - 1) * 9; el("path", { d: `M${x},${y - 4.5} l4.5,4.5 l-4.5,4.5 l-4.5,-4.5z`, fill: "var(--fraud)" }, svg); });
     vals.forEach((v, i) => {
       const x = xs(v), y = yMid + ((i % 3) - 1) * 9;
       el("circle", fires(v) ? { cx: x, cy: y, r: 4.5, fill: "var(--accent)" } : { cx: x, cy: y, r: 3.8, fill: "#fff", stroke: "var(--accent)", "stroke-width": 1.5 }, svg);
@@ -818,7 +818,7 @@
       if (!y) taken.push([b.x, b.x + b.width]);
       return true;
     };
-    lab(today, `${fmtVal(today, r.unit, true)} today`, { style: "fill:var(--drama)" });
+    lab(today, `${fmtVal(today, r.unit, true)} today`, { style: "fill:var(--ink)" });
     if (proposed != null && !lab(proposed, `${fmtVal(proposed, r.unit, true)} proposed`, { class: "t-strong" }))
       lab(proposed, `${fmtVal(proposed, r.unit, true)} proposed`, { class: "t-strong", "text-anchor": "start", x: xs(proposed) + 4 }, m.t + 10);
     lab(lo, fmtVal(lo, r.unit, true), { "text-anchor": "start" });
@@ -865,7 +865,7 @@
         <div class="rule-mid">
         <section class="card">
           <div class="card-head"><h2>What each threshold buys and costs</h2>
-            <div class="legend"><span><i style="background:var(--accent);height:8px;opacity:.55"></i>Friction removed ${info("removed")}</span><span><i style="background:var(--drama)"></i>Fraud still caught</span></div></div>
+            <div class="legend"><span><i style="background:var(--accent);height:8px;opacity:.55"></i>Friction removed ${info("removed")}</span><span><i style="background:var(--fraud)"></i>Fraud still caught</span></div></div>
           <div class="chart-box" id="curve"></div>
           <div class="slider-row">
             <div class="threshold-line"><strong>Threshold</strong>
@@ -954,7 +954,7 @@
         txt(svg, xs(fl) + 8, ys(24) + 28, "slipping through", {});
       }
     }
-    txt(svg, xs(0) + 4, m.t - 10, "Today", { style: "fill:var(--drama);font-weight:600" });
+    txt(svg, xs(0) + 4, m.t - 10, "Today", { style: "fill:var(--ink);font-weight:600" });
 
     const band = pts.map((p, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(p.pct[2]).toFixed(1)}`).join("")
       + pts.slice().reverse().map((p, j) => `L${xs(n - 1 - j).toFixed(1)},${ys(p.pct[1]).toFixed(1)}`).join("") + "Z";
@@ -962,7 +962,7 @@
     el("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(p.pct[0]).toFixed(1)}`).join(""), fill: "none", stroke: "var(--accent)", "stroke-width": 2.5, "stroke-linejoin": "round" }, svg);
     const base = cv.base_fraud_caught_rule;
     const fraudPct = pts.map((p) => (base ? (100 * p.fraud_caught_rule) / base : 100));
-    if (base) el("path", { d: fraudPct.map((v, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(v).toFixed(1)}`).join(""), fill: "none", stroke: "var(--drama)", "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+    if (base) el("path", { d: fraudPct.map((v, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(v).toFixed(1)}`).join(""), fill: "none", stroke: "var(--fraud)", "stroke-width": 2, "stroke-linejoin": "round" }, svg);
 
     const marker = el("g", { "pointer-events": "none" }, svg);
     curveGeo = { svg, marker, xs, ys, m, ih, iw, width, fraudPct, pts, base, xv, shown };
@@ -1028,11 +1028,11 @@
       if (!above && cy + 30 > g.m.t + g.ih) above = true;
       const by = above ? cy - 26 : cy + 8;
       t.setAttribute("x", bx + 6); t.setAttribute("y", by + 14);
-      const rect = el("rect", { x: bx, y: by, width: w, height: 20, rx: 10, fill: "var(--surface)", stroke: color || "var(--drama)" });
+      const rect = el("rect", { x: bx, y: by, width: w, height: 20, rx: 10, fill: "var(--surface)", stroke: color || "var(--fraud)" });
       g.marker.insertBefore(rect, t);
     };
     if (base) {
-      el("circle", { cx: x, cy: g.ys(g.fraudPct[i]), r: 5, fill: "var(--surface)", stroke: "var(--drama)", "stroke-width": 2 }, g.marker);
+      el("circle", { cx: x, cy: g.ys(g.fraudPct[i]), r: 5, fill: "var(--surface)", stroke: "var(--fraud)", "stroke-width": 2 }, g.marker);
       callout(x, g.ys(g.fraudPct[i]), `${pct(g.fraudPct[i])} caught`, null, true);
     }
     el("circle", { cx: x, cy: g.ys(p.pct[0]), r: 5, fill: "var(--surface)", stroke: "var(--accent)", "stroke-width": 2.5 }, g.marker);
