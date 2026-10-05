@@ -35,11 +35,13 @@ window selector and the threshold slider respond instantly.
 
 ## The three screens
 
-They follow the Figma designs' layout and content, in Open Sans, on a white page with thin-bordered
-cards. Colours: Fuchsian purple `#6F42C1` for friction, the rule at fault and actions; Aquamarine
-Blue `#007BFF` for fraud (fraud saved and lost, fraud still caught); teal `#17A2B8` for what is safe
-to relax. The A–F grade colours stay as the mock has them, including the tints in the count grid.
-Each screen has a 30 days / 60 days / 1 year window.
+They follow the Figma designs' layout and content, in Open Sans, with white cards on a light grey
+page. Colours: orange `#F29F67` for friction, the rule at fault and highlights; dark navy `#1E1E2C`
+for text, buttons and the headline card; blue `#3B8FF3` for fraud (fraud saved and lost, fraud still
+caught); teal `#34B1AA` for "Safe to relax" and mustard `#E0B50F` for "Little to gain". Changes
+against the previous window are red when worse and teal when better. The A–F grade colours stay as
+the mock has them, including the tints in the count grid. Each screen has a 30 days / 60 days /
+1 year window.
 
 Each screen is kept to a few headline numbers. Every concept is shown once, and supporting detail
 sits behind a disclosure (**Details**, **How it's calculated**, **Method and success metrics**).

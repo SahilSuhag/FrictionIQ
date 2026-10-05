@@ -255,10 +255,12 @@
     const heavy = heavyClients();
     const look = state.showAllHeavy ? heavy : heavy.slice(0, 5);
     const prev = P.prev;
-    const delta = (now, before) => {
+    // red when the change is worse for clients or the business, teal when it is better
+    const delta = (now, before, upIsWorse = true) => {
       if (before == null || !before) return "";
       const d = (100 * (now - before)) / before;
-      return `<span class="delta" title="vs previous ${W().label}">${d >= 0 ? "▲" : "▼"} ${pct(Math.abs(d))}</span>`;
+      const tone = Math.abs(d) < 0.5 ? "" : (d > 0) === upIsWorse ? " worse" : " better";
+      return `<span class="delta${tone}" title="vs previous ${W().label}">${d >= 0 ? "▲" : "▼"} ${pct(Math.abs(d))}</span>`;
     };
     const kpi = (label, value, sub, extra, cls) => `<div class="card kpi${cls ? " " + cls : ""}"><div class="label">${label}${extra || ""}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
     const FP = prev && prev.fraud;
@@ -278,7 +280,7 @@
         ${kpi("Safe to remove", fmtInt(P.free_to_remove), `interventions · ${fmtUsd(P.freed.usd)} of payouts, no fraud lost`, ` ${info("relax", "What counts as safe")}`)}
       </div>
       <div class="fraud-kpis">
-        ${kpi("Fraud saved", fmtUsd(F.caught_usd), `${fmtInt(F.caught)} of ${fmtInt(F.total)} fraud cases stopped by the rules`, `${delta(F.caught_usd, FP && FP.caught_usd)} ${info("saved", "What counts as fraud saved")}`, "fraud")}
+        ${kpi("Fraud saved", fmtUsd(F.caught_usd), `${fmtInt(F.caught)} of ${fmtInt(F.total)} fraud cases stopped by the rules`, `${delta(F.caught_usd, FP && FP.caught_usd, false)} ${info("saved", "What counts as fraud saved")}`, "fraud")}
         ${kpi("Fraud loss", fmtUsd(F.lost_usd), `${fmtInt(F.total - F.caught)} fraud case${F.total - F.caught === 1 ? "" : "s"} no rule stopped`, `${delta(F.lost_usd, FP && FP.lost_usd)} ${info("lost", "What counts as fraud loss")}`, "fraud")}
       </div>
       ${bannerSection()}
