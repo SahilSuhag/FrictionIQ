@@ -282,10 +282,11 @@
       <div class="home-grid">
         <section class="card">
           <div class="card-head"><h2>Who carries the friction</h2></div>
-          <div class="card-sub">Each dot is a client, coloured by friction grade. Top right: good clients we keep interrupting.</div>
+          <div class="card-sub">Each dot is a client: its row is its friction grade, its column how much good-client history it has.</div>
           <div class="chart-box" id="scatter"></div>
-          <div class="grade-legend">${GRADES.map((g) => `<span><i style="background:${gradeColor(g)}"></i>${g} ${P.grade_counts[g]}</span>`).join("")}
-            <span class="muted">${HEAVY.join(" and ")} = heavy friction</span></div>
+          <div class="grade-legend"><span><i style="background:var(--accent)"></i>Established clients graded ${HEAVY.join(" or ")} (${fmtInt(P.good_clients_heavy_friction)})</span>
+            <span><i style="background:var(--silver)"></i>All other clients (${fmtInt(clients.length - P.good_clients_heavy_friction)})</span>
+            <span>Grades run from A, least friction, to F, most ${info("score", "How grades are set")}</span></div>
         </section>
         <section class="card">
           <h2>Good clients to look at first</h2>
@@ -383,80 +384,73 @@
   }
 
   function drawScatter(box) {
+    // Rows are friction grades (F at the top), columns are good-client bands. Colour marks only
+    // the clients to look at first; the grade is read from the row, with its client count.
     const width = Math.max(300, box.clientWidth);
     const narrow = width < 560;
-    const H = narrow ? 300 : 360;
-    const m = { l: narrow ? 44 : 64, r: 8, t: 8, b: 48 };
-    const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, role: "img", "aria-label": "Friction score against good-client band for every client" }, box);
+    const H = narrow ? 300 : 340;
+    const m = { l: narrow ? 70 : 150, r: 8, t: 30, b: 44 };
+    const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, role: "img", "aria-label": "Clients by friction grade and good-client band" }, box);
     const iw = width - m.l - m.r, ih = H - m.t - m.b;
+    const total = clients.length, counts = D.portfolio[state.win].grade_counts;
     const scores = clients.map((c) => c.windows[state.win].score[0]).sort((a, b) => a - b);
-    const p97 = scores[Math.floor(scores.length * 0.97)];
-    const ymax = Math.max(400, Math.ceil(p97 / 100) * 100);
-    const ys = (v) => m.t + ih - (Math.min(v, ymax) / ymax) * ih;
+    const ymax = Math.max(400, Math.ceil(scores[Math.floor(scores.length * 0.97)] / 100) * 100);
+    const rowH = ih / GRADES.length;
+    const rowTop = (g) => m.t + (GRADES.length - 1 - GRADES.indexOf(g)) * rowH;
+    const ys = (g, v) => {
+      const [lo, hi] = D.grades.cutoffs[g];
+      const f = Math.max(0, Math.min(1, (v - lo) / ((hi == null ? ymax : hi + 1) - lo)));
+      return rowTop(g) + rowH - 5 - f * (rowH - 10);
+    };
     const cols = ["limited", "developing", "established"];
     const cw = iw / 3;
     const cx = (b) => m.l + cw * cols.indexOf(b);
 
     // good clients, heavy friction
-    el("rect", { x: cx("established"), y: m.t, width: cw, height: ys(HEAVY_FLOOR) - m.t, fill: "var(--heavy-wash)" }, svg);
-    for (let t = 0; t <= ymax; t += 100) {
-      el("line", { x1: m.l, x2: m.l + iw, y1: ys(t), y2: ys(t), class: t === 0 ? "axis" : "grid" }, svg);
-      txt(svg, m.l - 12, ys(t) + 4, String(t), { "text-anchor": "end" });
-    }
-    // grade strip on the y axis
+    const heavyTop = Math.min(...HEAVY.map(rowTop)), heavyBot = Math.max(...HEAVY.map(rowTop)) + rowH;
+    el("rect", { x: cx("established"), y: heavyTop, width: cw, height: heavyBot - heavyTop, fill: "var(--heavy-wash)" }, svg);
     GRADES.forEach((g) => {
-      const [lo, hi] = D.grades.cutoffs[g];
-      const top = ys(Math.min(hi == null ? ymax : hi + 1, ymax)), bot = ys(lo);
-      if (bot > top) el("rect", { x: m.l - 6, y: top + 1, width: 4, height: bot - top - 2, fill: gradeColor(g) }, svg);
+      const y = rowTop(g);
+      if (g !== GRADES[GRADES.length - 1]) el("line", { x1: m.l, x2: m.l + iw, y1: y, y2: y, class: "grid" }, svg);
+      el("rect", { x: 8, y: y + rowH / 2 - 10, width: 20, height: 20, rx: 6, fill: gradeColor(g) }, svg);
+      txt(svg, 18, y + rowH / 2 + 4, g, { "text-anchor": "middle", style: "fill:#fff;font-weight:700;font-size:11.5px" });
+      const n = counts[g] || 0;
+      txt(svg, 36, y + rowH / 2 + 4, narrow ? String(n) : `${fmtInt(n)} client${n === 1 ? "" : "s"} · ${pct((100 * n) / total)}`, { class: "t-ink", style: "font-size:12px" });
     });
-    el("line", { x1: m.l, x2: m.l + iw, y1: ys(HEAVY_FLOOR), y2: ys(HEAVY_FLOOR), stroke: "var(--border-strong)" }, svg);
-    for (let i = 1; i < 3; i++) el("line", { x1: m.l + cw * i, x2: m.l + cw * i, y1: m.t, y2: m.t + ih, stroke: "var(--border-strong)" }, svg);
-    if (!narrow) {
-      const t = txt(svg, -(m.t + ih / 2), 16, "Friction score", { transform: "rotate(-90)", "text-anchor": "middle" });
-      t.setAttribute("x", -(m.t + ih / 2));
-    }
-    const nHeavy = D.portfolio[state.win].good_clients_heavy_friction;
-    cols.forEach((b) => txt(svg, cx(b) + cw / 2, m.t + ih + 18, bandLabel(b), { "text-anchor": "middle", class: "t-ink" }));
-    txt(svg, m.l + iw / 2, m.t + ih + 38, narrow ? "Good-client evidence  →" : "Good-client evidence  →  tenure, cleared reviews, no confirmed fraud", { "text-anchor": "middle" });
+    el("line", { x1: m.l, x2: m.l + iw, y1: heavyBot, y2: heavyBot, stroke: "var(--border-strong)" }, svg);
+    el("line", { x1: m.l, x2: m.l + iw, y1: m.t + ih, y2: m.t + ih, class: "axis" }, svg);
+    for (let i = 1; i < 3; i++) el("line", { x1: m.l + cw * i, x2: m.l + cw * i, y1: m.t, y2: m.t + ih, stroke: "var(--border)" }, svg);
 
-    const pad = 14;
-    const pos = (c) => [cx(c.band) + pad + c.x * (cw - 2 * pad), ys(c.windows[state.win].score[0])];
-    const callouts = [];
-    clients.forEach((c) => {
+    const nHeavy = D.portfolio[state.win].good_clients_heavy_friction;
+    txt(svg, 8, 16, "Friction grade", { style: "font-size:11.5px" });
+    txt(svg, cx("established") + 8, 18, narrow ? `Start here · ${nHeavy}` : `Start here: ${nHeavy} good clients with heavy friction`, { style: "font-size:12px;font-weight:700;fill:var(--accent-ink)" });
+    if (!narrow) txt(svg, cx("limited") + 8, 18, "Expected here: new clients, past fraud", { style: "font-size:11.5px" });
+    cols.forEach((b) => txt(svg, cx(b) + cw / 2, m.t + ih + 18, bandLabel(b), { "text-anchor": "middle", class: "t-ink" }));
+    txt(svg, m.l + iw / 2, m.t + ih + 36, narrow ? "Good-client evidence  →" : "Good-client evidence  →  tenure, cleared reviews, no confirmed fraud", { "text-anchor": "middle" });
+
+    const pad = 12;
+    const pos = (c) => { const w = c.windows[state.win]; return [cx(c.band) + pad + c.x * (cw - 2 * pad), ys(w.grade, w.score[0])]; };
+    const order = clients.slice().sort((a, b) => a.windows[state.win].heavy - b.windows[state.win].heavy);
+    order.forEach((c) => {
       const w = c.windows[state.win];
       const [x, y] = pos(c);
-      const dot = el("circle", { cx: x, cy: y, r: 4.5, fill: gradeColor(w.grade), stroke: "#fff", "stroke-width": 1, style: "cursor:pointer" }, svg);
+      const dot = el("circle", w.heavy
+        ? { cx: x, cy: y, r: 5, fill: "var(--accent)", stroke: "#fff", "stroke-width": 1, style: "cursor:pointer" }
+        : { cx: x, cy: y, r: 3.6, fill: "var(--silver)", "fill-opacity": 0.75, style: "cursor:pointer" }, svg);
       bindTip(dot, `<b>${esc(c.name)}</b><br><span class="t-muted">${bandLabel(c.band)} · ${esc(c.segment_label)}${c.tenure_months != null ? ` · ${c.tenure_months} months` : ""}</span><br>
-        Grade <b>${w.grade}</b> · score ${Math.round(w.score[0])}${w.score[0] > ymax ? " (above the chart)" : ""} · ${w.n} interventions<br>${esc(causeText(c))}`);
+        Grade <b>${w.grade}</b> · more friction than ${pct(w.peer_pct[0])} of similar clients<br>${w.n} interventions · ${esc(causeText(c))}`);
       dot.addEventListener("click", () => go("#client/" + c.client_id));
-      if (c.client_id === demo.open_client) callouts.push([c, `Grade ${w.grade} · ${causeLine(c)}`]);
-      if (c.client_id === demo.guardrail_client) callouts.push([c, `Grade ${w.grade} · earned, ${c.evidence.confirmed_fraud} fraud cases`]);
     });
-    const halo = "paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round";
-    const q = (x, y, a, b) => {
-      txt(svg, x, y, a, { class: "t-ink", style: `font-size:12px;${halo}`, "pointer-events": "none" });
-      if (b) txt(svg, x, y + 15, b, { style: halo, "pointer-events": "none" });
-    };
     if (!narrow) {
-      q(cx("limited") + 10, m.t + 18, "Friction earned", "limited history or past fraud");
-      q(cx("limited") + 10, m.t + ih - 10, "New clients, light touch");
-      q(cx("established") + 10, m.t + ih - 10, "Good clients, left alone");
+      const halo = "paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round";
+      [[demo.open_client, "left", (c) => c.name], [demo.guardrail_client, "right", (c) => `${c.name} · ${c.evidence.confirmed_fraud} fraud cases`]].forEach(([id, side, label]) => {
+        const c = clients.find((k) => k.client_id === id);
+        if (!c) return;
+        const [x, y] = pos(c);
+        el("circle", { cx: x, cy: y, r: 8, fill: "none", stroke: "var(--ink)", "stroke-width": 1.5, "pointer-events": "none" }, svg);
+        txt(svg, side === "left" ? x - 12 : x + 12, y + 4, label(c), { class: "t-ink", "text-anchor": side === "left" ? "end" : "start", style: `font-size:12px;font-weight:600;${halo}`, "pointer-events": "none" });
+      });
     }
-    if (narrow) q(cx("established") + 6, m.t + 16, "Start here", `${nHeavy} clients`);
-    else q(cx("established") + 10, m.t + 18, "Good clients, heavy friction", `${nHeavy} clients  ·  start here`);
-    if (!narrow) callouts.forEach(([c, line]) => {
-      const [x, y] = pos(c);
-      el("circle", { cx: x, cy: y, r: 6.5, fill: gradeColor(c.windows[state.win].grade), stroke: "var(--ink)", "stroke-width": 2, "pointer-events": "none" }, svg);
-      const g = el("g", { "pointer-events": "none" }, svg);
-      const t1 = txt(g, 0, 0, c.name, { class: "t-ink", style: "font-size:12px" });
-      const t2 = txt(g, 0, 15, line);
-      const bw = Math.max(t1.getComputedTextLength(), t2.getComputedTextLength()) + 14;
-      const left = c.band === "established" ? x - bw - 12 : x + 12;
-      const top = Math.max(m.t + 2, Math.min(y - 12, m.t + ih - 40));
-      g.setAttribute("transform", `translate(${left + 7},${top + 15})`);
-      const rect = el("rect", { x: left, y: top, width: bw, height: 36, rx: 8, fill: "var(--surface)", stroke: "var(--lilac)" });
-      svg.insertBefore(rect, g);
-    });
   }
   function causeLine(c) {
     const w = c.windows[state.win];
