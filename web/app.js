@@ -28,7 +28,7 @@
   const state = {
     view: "home",
     win: "30d",
-    clientId: clientById[demo.open_client] ? demo.open_client : clients[0].client_id,
+    clientId: null,   // chosen on first visit: the good client carrying the most friction
     ruleId: ruleById[demo.hero_rule] ? demo.hero_rule : rules[0].rule_id,
     idx: {},
     policy: "global",
@@ -38,7 +38,9 @@
     filters: { band: [], type: [], region: [] },
     query: "",
     openGrades: ["F", "E"],
-    calcRows: [],
+    paneOpen: window.innerWidth > 980,
+    filtersOpen: true,
+    paneScroll: 0,
   };
 
   // ------------------------------------------------------------------ formatting
@@ -205,7 +207,9 @@
     routed = hash = hash || location.hash;
     const [v, arg] = hash.replace(/^#/, "").split("/");
     if (v === "client") {
-      if (arg && clientById[arg]) { state.clientId = arg; state.view = "client"; } else state.view = "clients";
+      if (arg && clientById[arg]) state.clientId = arg;
+      else if (!state.clientId) state.clientId = defaultClient();
+      state.view = "client";
     }
     else if (v === "rule") {
       if (arg && ruleById[arg] && arg !== state.ruleId) { state.ruleId = arg; state.proposalOpen = false; }
@@ -219,11 +223,10 @@
   function render() {
     hideTip();
     document.querySelectorAll(".nav a").forEach((a) => {
-      if (a.dataset.nav === (state.view === "clients" ? "client" : state.view)) a.setAttribute("aria-current", "page");
+      if (a.dataset.nav === state.view) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     });
     if (state.view === "home") renderHome();
-    if (state.view === "clients") renderClients();
     if (state.view === "client") renderClient();
     if (state.view === "rule") renderRule();
   }
@@ -593,118 +596,72 @@
     && (!state.query || `${c.name} ${c.client_id}`.toLowerCase().includes(state.query.toLowerCase()));
   const gradeCutoff = (g) => { const [lo, hi] = D.grades.cutoffs[g]; return hi == null ? `${lo} and above` : `${lo}–${hi}`; };
 
-  function renderClients() {
+  const defaultClient = () => (heavyClients()[0] || clientById[demo.open_client] || clients[0]).client_id;
+
+  // The client pane: every client grouped by friction grade, filterable, beside the client view.
+  function renderPane() {
+    const pane = document.getElementById("client-pane");
+    if (!pane) return;
+    const old = pane.querySelector(".pane-list");
+    const keep = old ? old.scrollTop : state.paneScroll;
+    if (!state.paneOpen) {
+      pane.innerHTML = `<button type="button" class="pane-toggle rail" id="pane-toggle" aria-expanded="false" title="Show the client list">
+        <span aria-hidden="true">»</span><span class="rail-label">Clients · ${fmtInt(clients.filter((c) => matches(c)).length)}</span></button>`;
+      document.getElementById("pane-toggle").onclick = () => { state.paneOpen = true; renderClient(); };
+      return;
+    }
     const list = clients.filter((c) => matches(c));
-    const byGrade = Object.fromEntries(GRADES.map((g) => [g, list.filter((c) => c.windows[state.win].grade === g)
-      .sort((a, b) => b.windows[state.win].score[0] - a.windows[state.win].score[0])]));
-    const anyFilter = FILTERS.some((f) => state.filters[f.key].length) || state.query;
-    const ints = (cs) => cs.reduce((t, c) => t + c.windows[state.win].n, 0);
+    const sel = clientById[state.clientId], selGrade = sel && sel.windows[state.win].grade;
+    const nOn = FILTERS.reduce((t, f) => t + state.filters[f.key].length, 0);
     const chips = (f) => f.options.map((o) => {
       const n = clients.filter((c) => matches(c, f.key) && f.of(c) === o).length;
-      const on = state.filters[f.key].includes(o);
-      return `<button type="button" class="chip" data-filter="${f.key}" data-value="${o}" aria-pressed="${on}">${esc(f.label(o))} <span>${n}</span></button>`;
+      return `<button type="button" class="chip" data-filter="${f.key}" data-value="${o}" aria-pressed="${state.filters[f.key].includes(o)}">${esc(f.label(o))} <span>${n}</span></button>`;
     }).join("");
+    const groups = GRADES.slice().reverse().map((g) => {
+      const cs = list.filter((c) => c.windows[state.win].grade === g).sort((a, b) => b.windows[state.win].score[0] - a.windows[state.win].score[0]);
+      if (!cs.length) return "";
+      const note = g === GRADES[GRADES.length - 1] ? "most friction" : g === GRADES[0] ? "least friction" : `score ${gradeCutoff(g)}`;
+      return `<details class="pane-group" data-grade="${g}" ${state.openGrades.includes(g) || g === selGrade ? "open" : ""}>
+        <summary><span class="grade-badge sm" style="background:${gradeColor(g)}">${g}</span><span class="pg-note">${note}</span><span class="pg-count">${cs.length}</span></summary>
+        ${cs.map((c) => { const w = c.windows[state.win]; return `<a class="pane-item" href="#client/${c.client_id}" data-pick="${c.client_id}" aria-current="${c.client_id === state.clientId}">
+          <span class="pi-name">${esc(c.name)}</span><span class="pi-score" title="Friction score">${Math.round(w.score[0])}</span>
+          <span class="pi-meta">${bandLabel(c.band)} · ${TYPE_LABELS[c.type] || "—"} · ${c.region || "—"}</span></a>`; }).join("")}
+      </details>`;
+    }).join("");
+    pane.innerHTML = `
+      <div class="pane-head"><h2>Clients</h2><span class="muted">${fmtInt(list.length)} of ${fmtInt(clients.length)}</span>
+        <button type="button" class="pane-toggle" id="pane-toggle" aria-expanded="true" title="Hide the client list">«</button></div>
+      <input id="pane-q" class="pane-search" type="search" placeholder="Search name or ID" aria-label="Search clients" value="${esc(state.query)}" autocomplete="off">
+      <details class="pane-filters" ${state.filtersOpen ? "open" : ""}><summary>Filters${nOn ? ` · ${nOn} on` : ""}</summary>
+        ${FILTERS.map((f) => `<div class="f-title">${f.title}</div><div class="chips">${chips(f)}</div>`).join("")}
+        ${nOn || state.query ? '<button type="button" class="link-btn" id="pane-clear">Clear filters</button>' : ""}</details>
+      <div class="pane-list">${groups || '<p class="muted pane-empty">No clients match these filters.</p>'}</div>`;
 
-    view.innerHTML = `
-      <div class="page-head">
-        <div><h1>Clients</h1>
-          <p class="lead">Every client, grouped by friction grade. Filter the list, open a group, and open a client to see its friction in detail.</p></div>
-        ${windowControl()}
-      </div>
-      <section class="card filters">
-        ${FILTERS.map((f) => `<div class="f-group"><div class="f-title">${f.title}</div><div class="chips">${chips(f)}</div></div>`).join("")}
-        <div class="f-group f-search"><label class="f-title" for="client-q">Name or ID</label>
-          <input id="client-q" type="search" placeholder="Search clients" value="${esc(state.query)}" autocomplete="off"></div>
-      </section>
-      <div class="results-bar">
-        <div><b>${fmtInt(list.length)}</b> of ${fmtInt(clients.length)} clients · ${fmtInt(ints(list))} interventions ${W().phrase}
-          ${anyFilter ? '<button type="button" class="link-btn" id="clear-filters">Clear filters</button>' : ""}</div>
-        <div class="grade-strip" role="group" aria-label="Jump to a grade">${GRADES.slice().reverse().map((g) =>
-          `<button type="button" class="gs" data-jump="${g}" style="background:${tint(gradeColor(g), 0.2)}" ${byGrade[g].length ? "" : "disabled"}>
-            <span class="grade-badge sm" style="background:${gradeColor(g)}">${g}</span>${byGrade[g].length}</button>`).join("")}</div>
-      </div>
-      ${list.length ? GRADES.slice().reverse().filter((g) => byGrade[g].length).map((g) => gradeGroup(g, byGrade[g], ints)).join("")
-        : '<section class="card"><p class="muted">No clients match these filters.</p></section>'}
-      ${footer()}`;
-
-    wireCommon();
-    view.querySelectorAll("[data-filter]").forEach((b) => (b.onclick = () => {
-      const arr = state.filters[b.dataset.filter], v = b.dataset.value, i = arr.indexOf(v);
-      if (i >= 0) arr.splice(i, 1); else arr.push(v);
-      renderClients();
+    const box = pane.querySelector(".pane-list");
+    box.scrollTop = keep;
+    const cur = box.querySelector('[aria-current="true"]');
+    if (cur && (cur.offsetTop < box.scrollTop || cur.offsetTop > box.scrollTop + box.clientHeight - 40)) box.scrollTop = cur.offsetTop - 60;
+    document.getElementById("pane-toggle").onclick = () => { state.paneOpen = false; renderClient(); };
+    const q = document.getElementById("pane-q");
+    q.oninput = () => { state.query = q.value; renderPane(); const n = document.getElementById("pane-q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    pane.querySelectorAll("[data-filter]").forEach((b) => (b.onclick = () => {
+      const arr = state.filters[b.dataset.filter], i = arr.indexOf(b.dataset.value);
+      if (i >= 0) arr.splice(i, 1); else arr.push(b.dataset.value);
+      renderPane();
     }));
-    const q = document.getElementById("client-q");
-    q.oninput = () => { state.query = q.value; renderClients(); const n = document.getElementById("client-q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
-    const clr = document.getElementById("clear-filters");
-    if (clr) clr.onclick = () => { FILTERS.forEach((f) => (state.filters[f.key] = [])); state.query = ""; renderClients(); };
-    view.querySelectorAll("details.grade-group").forEach((d) => d.addEventListener("toggle", () => {
+    const clr = document.getElementById("pane-clear");
+    if (clr) clr.onclick = () => { FILTERS.forEach((f) => (state.filters[f.key] = [])); state.query = ""; renderPane(); };
+    pane.querySelector(".pane-filters").addEventListener("toggle", (e) => { state.filtersOpen = e.target.open; });
+    pane.querySelectorAll("details.pane-group").forEach((d) => d.addEventListener("toggle", () => {
       const g = d.dataset.grade, i = state.openGrades.indexOf(g);
       if (d.open && i < 0) state.openGrades.push(g);
       if (!d.open && i >= 0) state.openGrades.splice(i, 1);
     }));
-    view.querySelectorAll("[data-jump]").forEach((b) => (b.onclick = () => {
-      const d = view.querySelector(`details.grade-group[data-grade="${b.dataset.jump}"]`);
-      if (!d) return;
-      d.open = true;
-      d.scrollIntoView({ block: "start", behavior: "smooth" });
+    pane.querySelectorAll("[data-pick]").forEach((a) => (a.onclick = (e) => {
+      e.preventDefault();
+      state.paneScroll = box.scrollTop;
+      go("#client/" + a.dataset.pick);
     }));
-    view.querySelectorAll("[data-calc]").forEach((b) => (b.onclick = () => {
-      const id = b.dataset.calc, row = document.getElementById(`calc-${id}`), open = row.hidden;
-      row.hidden = !open;
-      b.setAttribute("aria-expanded", String(open));
-      const i = state.calcRows.indexOf(id);
-      if (open && i < 0) state.calcRows.push(id);
-      if (!open && i >= 0) state.calcRows.splice(i, 1);
-    }));
-  }
-
-  function gradeGroup(g, cs, ints) {
-    const note = g === GRADES[GRADES.length - 1] ? " · most friction" : g === GRADES[0] ? " · least friction" : "";
-    return `<details class="card grade-group" data-grade="${g}" ${state.openGrades.includes(g) ? "open" : ""}>
-      <summary><span class="grade-badge sm" style="background:${gradeColor(g)}">${g}</span>
-        <span class="gg-title">Grade ${g}<span class="muted">${note} · score ${gradeCutoff(g)}</span></span>
-        <span class="gg-meta">${fmtInt(cs.length)} client${cs.length === 1 ? "" : "s"} · ${fmtInt(ints(cs))} interventions</span></summary>
-      <div class="table-scroll"><table class="client-table">
-        <thead><tr><th>Client</th><th>Good-client history</th><th>Type</th><th class="c">Region</th><th class="c">Transactions ${info("txn", "What counts as a transaction")}</th>
-          <th class="c">Interventions</th><th>Rule causing most</th><th class="c">Friction score</th><th></th></tr></thead>
-        <tbody>${cs.map((c) => clientRow(c)).join("")}</tbody></table></div>
-    </details>`;
-  }
-
-  function clientRow(c) {
-    const w = c.windows[state.win], t = topRuleByCount(w), open = state.calcRows.includes(c.client_id);
-    return `<tr class="crow">
-        <td data-label="Client"><a href="#client/${c.client_id}" data-client="${c.client_id}">${esc(c.name)}</a>
-          ${w.incident.items.length ? '<span class="tag tag-incident">Incident</span>' : ""}<div class="cid">${c.client_id}</div></td>
-        <td data-label="History">${bandLabel(c.band)}</td><td data-label="Type">${TYPE_LABELS[c.type] || "—"}</td><td class="c" data-label="Region">${c.region || "—"}</td>
-        <td class="c" data-label="Transactions">${fmtInt(w.txn[0])} <span class="muted">· ${fmtUsd(w.txn[1])}</span></td>
-        <td class="c" data-label="Interventions"><b>${fmtInt(w.n)}</b></td>
-        <td data-label="Rule causing most">${t ? `<a href="#rule/${t.rule}" data-rule="${t.rule}">${t.rule}</a> <span class="muted">· ${t.count} of ${w.n}</span>` : '<span class="muted">none</span>'}</td>
-        <td class="c" data-label="Friction score"><b>${Math.round(w.score[0])}</b></td>
-        <td class="c"><button type="button" class="calc-toggle" data-calc="${c.client_id}" aria-expanded="${open}" aria-controls="calc-${c.client_id}">How it adds up</button></td>
-      </tr>
-      <tr class="calc-row" id="calc-${c.client_id}" ${open ? "" : "hidden"}><td colspan="9">${scoreBreakdown(c)}</td></tr>`;
-  }
-
-  // One client's score, intervention by intervention: points = weight × hold-time factor × recency.
-  function scoreBreakdown(c) {
-    const w = c.windows[state.win], hits = windowHits(c, true).slice().reverse();
-    const uncounted = windowHits(c, false).length - hits.length;
-    if (!hits.length) return `<div class="breakdown"><p class="muted">No interventions ${W().phrase}, so ${esc(shortName(c))}'s score is 0 (grade ${w.grade}).</p></div>`;
-    return `<div class="breakdown">
-      <div class="bd-head"><b>How ${esc(shortName(c))}'s score of ${Math.round(w.score[0])} adds up</b>
-        <span class="muted">Each intervention scores weight × hold-time factor × recency; the points add up to the score.</span></div>
-      <div class="table-scroll"><table class="bd-table"><thead><tr><th>Date</th><th>Rule</th><th>Intervention</th>
-        <th class="c">Weight</th><th class="c">Hold-time factor</th><th class="c">Recency</th><th class="c">Points</th></tr></thead><tbody>
-        ${hits.map((h) => `<tr><td>${dayLabel(h.t)}</td><td>${h.r}</td><td>${actionLabel(h)}</td><td class="c">${h.w}</td>
-          <td class="c">${h.d === "HOLD" ? `× ${h.u} <span class="muted">(${heldFor(h)})</span>` : '<span class="muted">—</span>'}</td>
-          <td class="c">× ${h.y}</td><td class="c"><b>${(+h.s).toFixed(1)}</b></td>
-          <td class="bd-f">${h.w}${h.d === "HOLD" ? ` × ${h.u}` : ""} × ${h.y} = <b>${(+h.s).toFixed(1)}</b></td></tr>`).join("")}
-        <tr class="calc-total"><td colspan="6">Friction score → grade ${w.grade} <span class="muted">(${gradeCutoff(w.grade)})</span></td><td class="c">${w.score[0].toFixed(1)}</td></tr>
-      </tbody></table></div>
-      <p class="card-note">${uncounted ? `${uncounted} more hit${uncounted === 1 ? "" : "s"} (contributing, shadow or overridden) scored 0. ` : ""}${w.incident.friction ? "Outage friction is tracked separately and never added. " : ""}Recency halves every ${D.config.half_life_days} days.
-        <a href="#client/${c.client_id}" data-client="${c.client_id}">Open ${esc(c.name)} →</a></p>
-    </div>`;
   }
 
   function renderClient() {
@@ -727,10 +684,12 @@
     const icon = (ok) => ok === true ? '<svg viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5"/></svg>'
       : ok === false ? '<svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>' : '<svg viewBox="0 0 16 16"><path d="M4 8h8"/></svg>';
 
-    view.innerHTML = `
+    view.innerHTML = `<div class="client-shell${state.paneOpen ? "" : " pane-closed"}">
+      <aside class="client-pane" id="client-pane" aria-label="Clients"></aside>
+      <div class="client-main">
       <div class="page-head">
         <div>
-          <div class="crumbs"><a href="#client">Clients</a> › ${esc(c.name)}</div>
+          <div class="crumbs">Clients › ${esc(c.name)}</div>
           <div class="title-row"><h1>${esc(c.name)}</h1>
             <span class="tag tag-info">${bandLabel(c.band)} client</span>
             ${incItems.length ? '<span class="tag tag-incident">Incident</span>' : ""}
@@ -753,7 +712,7 @@
                   <div class="col"><span class="stat-value accent">${w.n}</span><span>${nowLabel}</span></div></div></div>
               <div><div class="stat-label">Payout hold time ${info("hold", "What payout hold time means")}</div>
                 <div class="stat-value">${w.holds ? holds : "None"}</div>
-                <div class="stat-sub">${w.holds ? `in total, across ${w.holds} payout${w.holds > 1 ? "s" : ""} (${fmtUsd(w.held_usd)}) held for manual review · ${w.holds_cleared === w.holds ? "all released" : `${w.holds_cleared} released`}` : "no payouts held for review"}</div></div>
+                <div class="stat-sub">${w.holds ? `added up across ${w.holds} held payout${w.holds > 1 ? "s" : ""} (${fmtUsd(w.held_usd)}) · ${w.holds_cleared === w.holds ? "all released" : `${w.holds_cleared} released`}` : "no payouts held for review"}</div></div>
               <div><div class="stat-label">Payouts denied</div>
                 <div class="stat-value">${w.denied}</div>
                 <div class="stat-sub">${w.denied ? `${fmtUsd(w.denied_usd)} · ${w.denied_fraud ? `${w.denied_fraud} confirmed fraud` : "no fraud found in any"}` : "none in this window"}</div></div>
@@ -793,9 +752,10 @@
           ${top ? `<section class="card" id="why-card"></section>` : ""}
         </div>
       </div>
-      ${footer()}`;
+      ${footer()}</div></div>`;
 
     wireCommon();
+    renderPane();
     document.getElementById("show-uncredited").onchange = (e) => { state.showUncredited = e.target.checked; renderLog(c); };
     drawLanes(document.getElementById("lanes"), c, w);
     renderLog(c);
