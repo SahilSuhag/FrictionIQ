@@ -297,6 +297,7 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
         grid = grids[r.rule_id]
         rules_out.append({
             "rule_id": r.rule_id, "decision": r.decision, "decision_label": DECISION_LABELS.get(r.decision, r.decision),
+            "name": r.name, "channel": r.channel,
             "checkpoint": r.checkpoint, "ruleset_id": r.ruleset_id, "order": r.order, "entity": r.entity,
             "request_type": r.request_type, "live_since": r.live_since, "description": r.description,
             "expression": r.text, "feature": r.expr.feature, "op": r.expr.op, "unit": unit, "shadow": r.shadow,

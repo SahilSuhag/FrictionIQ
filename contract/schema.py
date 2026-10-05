@@ -24,6 +24,7 @@ RULE_FIELDS = [
     "shadow_setting",    # ON | OFF
     "description",       # added: what the rule does, in words (shown on hover in the client log)
     "live_since",        # added: date the rule went live; it is evaluated only on later events
+    "channel",           # added: CARD_PRESENT | CARD_NOT_PRESENT for card checkpoints, else blank
 ]
 
 RULESET_BINDING_FIELDS = ["ruleset_id", "rule_id", "checkpoint", "order"]

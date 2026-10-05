@@ -245,9 +245,9 @@ details.method[open] summary { margin-bottom: 12px; }
 .client-shell.pane-closed { grid-template-columns: 44px minmax(0, 1fr); }
 .client-main { min-width: 0; }
 .client-shell .client-grid { grid-template-columns: minmax(0, 1fr) 310px; }
-.client-pane { position: sticky; top: 76px; max-height: calc(100vh - 92px); display: flex; flex-direction: column; background: var(--surface);
-  border: 1px solid var(--border); border-radius: var(--radius); padding-top: 14px; overflow: hidden; }
-.pane-closed .client-pane { padding: 0; border: 0; background: none; overflow: visible; }
+.list-pane { position: sticky; top: 76px; max-height: calc(100vh - 92px); display: flex; flex-direction: column; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); padding-top: 14px; overflow-y: auto; overscroll-behavior: contain; }
+.pane-closed .list-pane { padding: 0; border: 0; background: none; overflow: visible; }
 .pane-head { display: flex; align-items: center; gap: 8px; padding: 0 14px 10px; }
 .pane-head .muted { font-size: 12px; }
 .pane-toggle { margin-left: auto; width: 30px; height: 28px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface);
@@ -268,7 +268,7 @@ details.method[open] summary { margin-bottom: 12px; }
 .chip:hover { border-color: var(--ink-2); }
 .chip[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
 .chip[aria-pressed="true"] span { color: rgba(255, 255, 255, .7); }
-.pane-list { position: relative; flex: 1; min-height: 140px; overflow: auto; padding: 2px 6px 10px; }
+.pane-list { flex: none; padding: 2px 6px 10px; }
 .pane-empty { padding: 10px 8px; }
 .pane-group summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--surface);
   cursor: pointer; list-style: none; font-size: 12px; }
@@ -341,19 +341,20 @@ details.calc[open] summary h2::before, details.more[open] summary h2::before { t
 .calc-note { font-size: 12.5px; color: var(--ink-2); }
 
 /* ---------- rule */
-.rule-grid { display: grid; grid-template-columns: 270px minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
-.rule-list { padding: 0; overflow: hidden; }
-.rule-list .card-head { padding: 18px 18px 10px; }
-.rule-item { display: grid; gap: 4px; width: 100%;
-  text-align: left; background: var(--surface); border: 0; border-top: 1px solid var(--border); padding: 10px 16px; cursor: pointer; }
-.rule-item:hover { background: var(--surface-2); }
-.rule-item[aria-current="true"] { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--accent); }
-.rule-item[aria-current="true"] .rid { color: var(--accent-ink); font-weight: 700; }
-.rule-item .rid { font-size: 12.5px; font-weight: 600; overflow-wrap: anywhere; }
-.rule-item .rmeta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 8px; }
-.rule-item .rcount { font-size: 11px; color: var(--muted); white-space: nowrap; }
-.rule-item .tag { font-size: 10.5px; padding: 0 7px; }
-.rule-list .foot { padding: 14px 18px 16px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--border); }
+.rule-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.rule-grid.pane-closed { grid-template-columns: 44px minmax(0, 1fr) 340px; }
+.rule-group { padding-bottom: 4px; }
+.rg-head { display: flex; align-items: center; gap: 8px; padding: 10px 8px 6px; background: var(--surface);
+  font-size: 11.5px; font-weight: 700; color: var(--ink-2); }
+.rule-item.pane-item { gap: 2px 8px; }
+.rule-item .pi-name, .rule-item .pi-desc { grid-column: 1 / -1; white-space: normal; }
+.pi-desc { font-size: 11.5px; color: var(--ink-2); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rule-item .pi-meta { grid-column: 1; align-self: center; margin-top: 3px; }
+.rule-item .tag { grid-column: 2; justify-self: end; margin-top: 3px; font-size: 10.5px; padding: 0 7px; }
+.pane-note { font-size: 11px; color: var(--muted); margin-top: 10px; }
+.pane-foot { padding: 6px 8px 0; margin: 4px 0 0; border-top: 1px solid var(--border); }
+.chip:disabled { opacity: .45; cursor: default; }
+.chip:disabled:hover { border-color: var(--border-strong); }
 .rule-mid { display: grid; gap: 16px; min-width: 0; }
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); align-items: center; }
 .legend i { display: inline-block; width: 16px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
@@ -402,7 +403,8 @@ svg .axis { stroke: var(--border-strong); stroke-width: 1; }
 
 /* ---------- responsive */
 @media (max-width: 1240px) {
-  .rule-grid { grid-template-columns: 240px minmax(0, 1fr); }
+  .rule-grid { grid-template-columns: 260px minmax(0, 1fr); }
+  .rule-grid.pane-closed { grid-template-columns: 44px minmax(0, 1fr); }
   .rule-grid > .rule-right { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .home-grid, .client-grid { grid-template-columns: minmax(0, 1fr) 340px; }
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -414,13 +416,13 @@ svg .axis { stroke: var(--border-strong); stroke-width: 1; }
 }
 @media (max-width: 980px) {
   .client-shell, .client-shell.pane-closed, .client-shell .client-grid { grid-template-columns: minmax(0, 1fr); }
-  .client-pane { position: static; max-height: none; }
-  .pane-list { max-height: 50vh; }
+  .list-pane { position: static; max-height: none; }
+  .list-pane { max-height: 75vh; }
   .pane-toggle.rail { width: 100%; min-height: 0; flex-direction: row; justify-content: flex-start; padding: 10px 14px; }
   .rail-label { writing-mode: horizontal-tb; transform: none; }
   .home-grid, .client-grid, .rule-grid, .banner { grid-template-columns: minmax(0, 1fr); }
   .rule-grid > .rule-right { grid-template-columns: 1fr; }
-  .rule-grid > .rule-list { order: 3; }
+  .rule-grid.pane-closed { grid-template-columns: minmax(0, 1fr); }
   .home-top { grid-template-columns: minmax(0, 1fr); }
   .side-cards { grid-template-columns: 1fr 1fr; }
   .glance { grid-template-columns: 1fr 1fr; row-gap: 16px; }

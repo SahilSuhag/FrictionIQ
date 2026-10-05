@@ -44,6 +44,28 @@ RULES = [
      "Shadow test of a $50 payout cap: logs what it would deny or hold, acts on nothing."),
 ]
 
+# Readable names for the screens (rule_id stays the identifier).
+NAMES = {
+    "payout_limit_100": "Payout limit $100",
+    "velocity_check": "Velocity check",
+    "new_counterparty": "New counterparty",
+    "boarding_doc_mismatch": "Boarding document mismatch",
+    "geo_mismatch": "Geo mismatch",
+    "payout_velocity_24h": "Payout velocity 24h",
+    "refund_ratio_30d": "Refund ratio 30d",
+    "device_change_payout": "Device change payout",
+    "card_testing_deny": "Card testing",
+    "new_device_limit": "New device limit",
+    "payout_limit_50_shadow": "Payout limit $50 (shadow)",
+}
+
+# Card channel for rules at card checkpoints. Metadata only: it does not change when a rule fires.
+CHANNELS = {
+    "geo_mismatch": "CARD_NOT_PRESENT",
+    "card_testing_deny": "CARD_NOT_PRESENT",
+    "new_device_limit": "CARD_PRESENT",
+}
+
 RULESETS = {
     "CLIENT_BOARDING": "RS-BOARDING-01",
     "PRE_CAPTURE": "RS-CAPTURE-01",
@@ -58,9 +80,9 @@ OVERRIDE_RULES = {"geo_mismatch": ("global_enterprise", 0.85)}
 
 def rule_rows():
     return [{
-        "rule_id": r[0], "rule_name": r[0], "entity": r[1], "request_type": r[2], "category": r[3],
+        "rule_id": r[0], "rule_name": NAMES.get(r[0], r[0]), "entity": r[1], "request_type": r[2], "category": r[3],
         "sub_category": r[4], "decision": r[5], "rule_expression": r[6], "shadow_setting": r[7],
-        "description": r[11], "live_since": r[10],
+        "description": r[11], "live_since": r[10], "channel": CHANNELS.get(r[0], ""),
     } for r in RULES]
 
 

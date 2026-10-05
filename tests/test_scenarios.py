@@ -316,6 +316,15 @@ def test_clients_have_a_type_and_region(world):
     # scenario clients keep their segment as their type; payfac platforms are ISVs
     assert clients["ACME-0417"]["type"] == "SMB" and clients["NORT-7716"]["type"] == "ISV"
 
+
+def test_rules_have_readable_names_and_card_channels(world):
+    *_, rules = world
+    assert all("_" not in r["name"] and r["name"] for r in rules.values())
+    assert rules["payout_limit_100"]["name"] == "Payout limit $100"
+    capture = {rid for rid, r in rules.items() if r["checkpoint"] == "PRE_CAPTURE"}
+    assert capture and all(rules[rid]["channel"] in ("CARD_PRESENT", "CARD_NOT_PRESENT") for rid in capture)
+    assert all(r["channel"] == "" for rid, r in rules.items() if rid not in capture)
+
 def test_trend_shows_the_hero_rule_launch(world):
     _, _, res, _, _ = world
     b = res["trend"]["buckets"]

@@ -51,6 +51,7 @@ class Rule:
     description: str
     live_since: str
     live_from: float          # hours since WINDOW_START
+    channel: str = ""         # CARD_PRESENT | CARD_NOT_PRESENT at card checkpoints
 
     @property
     def requests(self) -> set[str] | None:
@@ -82,7 +83,7 @@ class Dataset:
                                    r["sub_category"], r["decision"], r["rule_expression"],
                                    expression.parse(r["rule_expression"]), r["shadow_setting"] == "ON",
                                    b["checkpoint"], int(b["order"]), b["ruleset_id"], r["description"],
-                                   r["live_since"], hours(r["live_since"] + "T00:00:00Z")))
+                                   r["live_since"], hours(r["live_since"] + "T00:00:00Z"), r.get("channel") or ""))
         self.rule_index = {r.rule_id: r.idx for r in self.rules}
 
         # --- decision events

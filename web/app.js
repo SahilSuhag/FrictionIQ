@@ -39,6 +39,11 @@
     query: "",
     openGrades: ["F", "E"],
     paneOpen: window.innerWidth > 980,
+    ruleFilters: { cp: [], type: [], region: [] },
+    ruleQuery: "",
+    rulePaneOpen: window.innerWidth > 980,
+    ruleFiltersOpen: true,
+    rulePaneScroll: 0,
     filtersOpen: true,
     paneScroll: 0,
   };
@@ -111,6 +116,19 @@
   const bandLabel = (b) => ({ established: "Established", developing: "Developing", limited: "Limited history" }[b]);
   const TYPE_LABELS = { ENTERPRISE: "Enterprise", MID_MARKET: "Middle Market", SMB: "SMB", ISV: "ISV", SCOTIA: "Scotia" };
   const REGIONS = ["CA", "US", "EMEA", "APAC"];
+  // Rules by readable name; checkpoints in words, with the card channel where there is one.
+  const rn = (id) => (ruleById[id] && ruleById[id].name) || String(id).replace(/_/g, " ");
+  const CHECKPOINTS = [
+    ["CLIENT_ONBOARDING", "Client onboarding"], ["PRODUCT_ONBOARDING", "Product onboarding"],
+    ["PRE_AUTH_CP", "Pre-auth, card present"], ["PRE_AUTH_CNP", "Pre-auth, card not present"],
+    ["PRE_CAPTURE_CNP", "Pre-capture, card not present"], ["PRE_CAPTURE_CP", "Pre-capture, card present"],
+    ["PRE_SETTLEMENT", "Pre-settlement"], ["PRE_PAYOUT", "Pre-payout"],
+  ];
+  const CP_LABEL = Object.fromEntries(CHECKPOINTS);
+  const cpKey = (r) => r.checkpoint === "CLIENT_BOARDING" ? "CLIENT_ONBOARDING"
+    : r.checkpoint === "PRE_CAPTURE" ? (r.channel === "CARD_PRESENT" ? "PRE_CAPTURE_CP" : "PRE_CAPTURE_CNP") : r.checkpoint;
+  const cpOf = (r) => CP_LABEL[cpKey(r)] || r.checkpoint;
+  const hitCp = (h) => (ruleById[h.r] ? cpOf(ruleById[h.r]) : h.c);
   const tagFor = (cv) => ({ free: "tag-free", small: "tag-small", none: "tag-none" }[cv.verdict] || "tag-quiet");
   const verbFor = (r) => (r.op && r.op.startsWith("<") ? "Lowering" : "Raising");
 
@@ -256,9 +274,9 @@
     const e = Object.entries(w.by_rule).sort((a, b) => b[1].score - a[1].score);
     if (!e.length) return "No rule interventions";
     const [top, v] = e[0];
-    if (v.count / w.n >= 0.75) return `${v.count} of ${w.n} from ${top}`;
-    if (v.score / w.score[0] >= 0.5 || e.length === 1) return `Mostly ${top}`;
-    return `${top} and ${e[1][0]}`;
+    if (v.count / w.n >= 0.75) return `${v.count} of ${w.n} from ${rn(top)}`;
+    if (v.score / w.score[0] >= 0.5 || e.length === 1) return `Mostly ${rn(top)}`;
+    return `${rn(top)} and ${rn(e[1][0])}`;
   }
   const heavyClients = () => clients.filter((c) => c.windows[state.win].heavy)
     .sort((a, b) => b.windows[state.win].score[0] - a.windows[state.win].score[0]);
@@ -361,13 +379,13 @@
   function bannerSection() {
     const t = trendFacts();
     const ratio = t.last.n / t.avg;
-    const head = ratio >= 2 ? `Friction more than doubled${t.launch ? ` after ${t.rise} went live` : ""}`
+    const head = ratio >= 2 ? `Friction more than doubled${t.launch ? ` after ${rn(t.rise)} went live` : ""}`
       : `Friction ${ratio >= 1 ? "rose" : "fell"} ${pct(Math.abs(100 * (ratio - 1)))} in the last 30 days`;
     return `<section class="card banner">
       <div><div class="eyebrow">Key finding</div><h3>${head}</h3>
         <p>Interventions that found no fraud averaged ${fmtInt(t.avg)} a month, then reached ${fmtInt(t.last.n)} in the last 30 days.
-        ${t.rise}${t.launch ? `, live since ${dayLabel(t.launch.date + "T00:00:00Z")},` : ""} accounts for ${fmtInt(t.last.by_rule[t.rise] || 0)} of them.</p>
-        <button class="btn btn-soft" data-rule="${t.rise}">Open ${t.rise} →</button></div>
+        ${rn(t.rise)}${t.launch ? `, live since ${dayLabel(t.launch.date + "T00:00:00Z")},` : ""} accounts for ${fmtInt(t.last.by_rule[t.rise] || 0)} of them.</p>
+        <button class="btn btn-soft" data-rule="${t.rise}">Open ${rn(t.rise)} →</button></div>
       <div class="chart-box" id="trend-chart"></div>
     </section>`;
   }
@@ -387,7 +405,7 @@
         <th class="c">Payouts held or denied</th><th>Room to relax ${info("relax")}</th></tr></thead><tbody>
       ${rows.map((r, i) => {
         const rw = r.windows[state.win], u = usdOf(r), pr = per(r);
-        return `<tr><td><button class="rname${i === 0 ? " top" : ""}" data-rule="${r.rule_id}">${r.rule_id}</button></td>
+        return `<tr><td><button class="rname${i === 0 ? " top" : ""}" data-rule="${r.rule_id}">${esc(rn(r.rule_id))}</button></td>
           <td class="c"><div class="inline-bar"><span class="track"><span style="width:${(100 * rw.interventions) / maxN}%" class="${i === 0 ? "top" : ""}"></span></span><b class="num">${fmtInt(rw.interventions)}</b></div></td>
           <td class="c">${fmtInt(fraudOf(r))}</td>
           <td class="c">${pr == null ? '<span class="muted">no fraud caught</span>' : `<span class="${pr === maxPer ? "hl-cell" : ""}">${fmt1(pr)}&nbsp;:&nbsp;1</span>`}</td>
@@ -492,7 +510,7 @@
         const w = c.windows[state.win], t = topRuleByCount(w);
         return `<tr><td><a href="#client/${c.client_id}" data-client="${c.client_id}">${esc(c.name)}</a></td>
           <td class="c" data-label="Transactions">${fmtInt(w.txn[0])}</td><td class="c" data-label="Value">${fmtUsd(w.txn[1])}</td><td class="c" data-label="Interventions"><b>${fmtInt(w.n)}</b></td>
-          <td class="nowrap" data-label="Rule causing most">${t ? `<a href="#rule/${t.rule}" data-rule="${t.rule}">${t.rule}</a> <span class="muted">· ${t.count} of ${w.n}</span>` : '<span class="muted">none</span>'}</td></tr>`;
+          <td class="nowrap" data-label="Rule causing most">${t ? `<a href="#rule/${t.rule}" data-rule="${t.rule}">${esc(rn(t.rule))}</a> <span class="muted">· ${t.count} of ${w.n}</span>` : '<span class="muted">none</span>'}</td></tr>`;
       }).join("")}</tbody></table></div>`;
     wireInfo(panel);
     panel.querySelector(".cp-close").onclick = () => closeCell(true);
@@ -537,7 +555,7 @@
       ["Clients above the high-friction line", `${ra.clients_above_p75_before}`,
         `${ra.clients_above_p75_after} after; ${ra.clients_friction_increased} clients see friction rise; top-decile share ${pct(100 * ra.top_decile_share[0])} → ${pct(100 * ra.top_decile_share[1])}`],
       ["Range width across weightings", "n/a", `widest spread in the safe range: ${M.range_width_pts} percentage points`],
-      ["Rules to keep as is (relaxing misses fraud)", "unknown today", M.no_free_stretch.join(", ") || "none"],
+      ["Rules to keep as is (relaxing misses fraud)", "unknown today", M.no_free_stretch.map(rn).join(", ") || "none"],
     ];
     const w = D.config.decision_weights;
     return `<details class="card method" open><summary>Method and success metrics · ${W().phrase}</summary>
@@ -596,14 +614,20 @@
     && (!state.query || `${c.name} ${c.client_id}`.toLowerCase().includes(state.query.toLowerCase()));
   const gradeCutoff = (g) => { const [lo, hi] = D.grades.cutoffs[g]; return hi == null ? `${lo} and above` : `${lo}–${hi}`; };
 
+  // Keep the selected entry of a scrolling pane in view.
+  function showCurrent(pane) {
+    const cur = pane.querySelector('[aria-current="true"]');
+    if (!cur || pane.scrollHeight <= pane.clientHeight) return;
+    const pr = pane.getBoundingClientRect(), cr = cur.getBoundingClientRect();
+    if (cr.top < pr.top + 40 || cr.bottom > pr.bottom - 10) pane.scrollTop += cr.top - pr.top - pr.height / 3;
+  }
   const defaultClient = () => (heavyClients()[0] || clientById[demo.open_client] || clients[0]).client_id;
 
   // The client pane: every client grouped by friction grade, filterable, beside the client view.
   function renderPane() {
     const pane = document.getElementById("client-pane");
     if (!pane) return;
-    const old = pane.querySelector(".pane-list");
-    const keep = old ? old.scrollTop : state.paneScroll;
+    const keep = pane.childElementCount ? pane.scrollTop : state.paneScroll;
     if (!state.paneOpen) {
       pane.innerHTML = `<button type="button" class="pane-toggle rail" id="pane-toggle" aria-expanded="false" title="Show the client list">
         <span aria-hidden="true">»</span><span class="rail-label">Clients · ${fmtInt(clients.filter((c) => matches(c)).length)}</span></button>`;
@@ -637,10 +661,8 @@
         ${nOn || state.query ? '<button type="button" class="link-btn" id="pane-clear">Clear filters</button>' : ""}</details>
       <div class="pane-list">${groups || '<p class="muted pane-empty">No clients match these filters.</p>'}</div>`;
 
-    const box = pane.querySelector(".pane-list");
-    box.scrollTop = keep;
-    const cur = box.querySelector('[aria-current="true"]');
-    if (cur && (cur.offsetTop < box.scrollTop || cur.offsetTop > box.scrollTop + box.clientHeight - 40)) box.scrollTop = cur.offsetTop - 60;
+    pane.scrollTop = keep;
+    showCurrent(pane);
     document.getElementById("pane-toggle").onclick = () => { state.paneOpen = false; renderClient(); };
     const q = document.getElementById("pane-q");
     q.oninput = () => { state.query = q.value; renderPane(); const n = document.getElementById("pane-q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
@@ -659,7 +681,7 @@
     }));
     pane.querySelectorAll("[data-pick]").forEach((a) => (a.onclick = (e) => {
       e.preventDefault();
-      state.paneScroll = box.scrollTop;
+      state.paneScroll = pane.scrollTop;
       go("#client/" + a.dataset.pick);
     }));
   }
@@ -685,7 +707,7 @@
       : ok === false ? '<svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>' : '<svg viewBox="0 0 16 16"><path d="M4 8h8"/></svg>';
 
     view.innerHTML = `<div class="client-shell${state.paneOpen ? "" : " pane-closed"}">
-      <aside class="client-pane" id="client-pane" aria-label="Clients"></aside>
+      <aside class="list-pane" id="client-pane" aria-label="Clients"></aside>
       <div class="client-main">
       <div class="page-head">
         <div>
@@ -719,9 +741,9 @@
             </div>
             <div class="glance-bottom">
               <div><div class="stat-label">Caused by</div>
-                ${topR ? `<div class="share-bar">${byRule.map(([k, v], i) => `<div style="flex:${Math.max(v.score, 0.01)};background:${k === top ? "var(--accent)" : i % 2 ? "var(--lilac)" : "var(--silver)"}" title="${k}: ${v.count}"></div>`).join("")}</div>
-                <div><span class="big-accent">${pct((100 * topR.score) / Math.max(total, 1e-9))}</span> from ${top} · ${topR.count} of ${w.n} interventions</div>
-                <div class="stat-sub">${others.length ? `${others.length} other rule${others.length > 1 ? "s" : ""}: ${others.join(", ")}` : "no other rules"}</div>`
+                ${topR ? `<div class="share-bar">${byRule.map(([k, v], i) => `<div style="flex:${Math.max(v.score, 0.01)};background:${k === top ? "var(--accent)" : i % 2 ? "var(--lilac)" : "var(--silver)"}" title="${rn(k)}: ${v.count}"></div>`).join("")}</div>
+                <div><span class="big-accent">${pct((100 * topR.score) / Math.max(total, 1e-9))}</span> from ${esc(rn(top))} · ${topR.count} of ${w.n} interventions</div>
+                <div class="stat-sub">${others.length ? `${others.length} other rule${others.length > 1 ? "s" : ""}: ${others.map(rn).join(", ")}` : "no other rules"}</div>`
                 : '<div class="stat-sub">No rule interventions in this window.</div>'}</div>
               <div><div class="stat-label">Compared with similar clients</div>
                 <div class="peer-big">${ordinal(w.peer_pct[0])} <span>percentile</span></div>
@@ -790,13 +812,13 @@
       const isTop = rid === w.top_rule;
       if (isTop) el("rect", { x: 0, y: m.t + laneH * k, width, height: laneH, fill: "var(--accent-wash)" }, svg);
       el("line", { x1: m.l + pad, x2: width - m.r - pad, y1: y, y2: y, stroke: "var(--border)" }, svg);
-      const label = txt(svg, 8, y + 4, rid, { style: `font-size:12.5px;fill:${isTop ? "var(--accent-ink)" : "var(--ink)"};cursor:pointer` });
+      const label = txt(svg, 8, y + 4, rn(rid), { style: `font-size:12.5px;fill:${isTop ? "var(--accent-ink)" : "var(--ink)"};cursor:pointer` });
       label.addEventListener("click", () => go("#rule/" + rid));
       txt(svg, width - 10, y + 4, String(counts[rid]), { "text-anchor": "end", class: "t-strong", style: `font-size:12.5px;${isTop ? "fill:var(--accent-ink)" : ""}` });
       hits.filter((h) => h.r === rid).forEach((h) => {
         const dot = el("circle", { cx: xs(h.t), cy: y, r: 6, fill: isTop ? "var(--accent)" : "var(--silver)", stroke: "#fff", "stroke-width": 1.5 }, svg);
         const hit = el("circle", { cx: xs(h.t), cy: y, r: 11, fill: "transparent" }, svg);
-        bindTip(hit, `<b>${dayLabel(h.t)}</b> · ${esc(rid)}<br>${actionLabel(h)} · ${h.c}${h.$ != null ? ` · ${fmtUsd(h.$)}` : ""}<br>Held for ${heldFor(h)} · ${outcomeLabel(h)}<br><span class="t-muted">Adds ${(+h.s).toFixed(1)} points: weight ${h.w}${h.d === "HOLD" ? ` × hold ${h.u}` : ""} × recency ${h.y}</span>`);
+        bindTip(hit, `<b>${dayLabel(h.t)}</b> · ${esc(rn(rid))}<br>${actionLabel(h)} · ${hitCp(h)}${h.$ != null ? ` · ${fmtUsd(h.$)}` : ""}<br>Held for ${heldFor(h)} · ${outcomeLabel(h)}<br><span class="t-muted">Adds ${(+h.s).toFixed(1)} points: weight ${h.w}${h.d === "HOLD" ? ` × hold ${h.u}` : ""} × recency ${h.y}</span>`);
         dot.setAttribute("pointer-events", "none");
       });
     });
@@ -816,8 +838,8 @@
     const box = document.getElementById("log");
     box.innerHTML = `<table><thead><tr><th>Date</th><th>Rule</th><th>Action</th><th>Checkpoint</th><th>Held for</th><th>Outcome</th><th class="num">Points ${info("score", "How points are calculated")}</th></tr></thead><tbody>
       ${hits.map((h) => `<tr class="${h.a === "P" ? "" : "uncredited"}"><td>${dayLabel(h.t)}</td>
-        <td class="rule-cell${h.r === w.top_rule && h.a === "P" ? " top" : ""}"><span data-tip-rule="${h.r}">${h.r}</span></td>
-        <td>${h.a === "P" ? actionLabel(h) : roleNote[h.a]}</td><td>${h.c}</td><td>${h.a === "P" ? heldFor(h) : "—"}</td>
+        <td class="rule-cell${h.r === w.top_rule && h.a === "P" ? " top" : ""}"><span data-tip-rule="${h.r}">${esc(rn(h.r))}</span></td>
+        <td>${h.a === "P" ? actionLabel(h) : roleNote[h.a]}</td><td>${hitCp(h)}</td><td>${h.a === "P" ? heldFor(h) : "—"}</td>
         <td>${h.a === "P" ? outcomeLabel(h) : "—"}</td>
         <td class="num">${h.a === "P" ? `<span class="pts" data-pts="${h.w}|${h.d === "HOLD" ? h.u : 1}|${h.y}|${heldFor(h)}">${(+h.s).toFixed(1)}</span>` : "0"}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">No interventions in this window.</td></tr>'}
       ${hits.length ? `<tr class="calc-total"><td colspan="6">Friction score</td><td class="num">${w.score[0].toFixed(1)}</td></tr>` : ""}
@@ -829,7 +851,7 @@
     });
     box.querySelectorAll("[data-tip-rule]").forEach((s) => {
       const r = ruleById[s.dataset.tipRule];
-      bindTip(s, `<b>${r.rule_id}</b><br>${esc(r.description)}<br><span class="t-muted">${r.decision_label} · ${r.checkpoint} · live since ${fullDate(r.live_since + "T00:00:00Z")}</span>`);
+      bindTip(s, `<b>${esc(rn(r.rule_id))}</b><br>${esc(r.description)}<br><span class="t-muted">${r.decision_label} · ${cpOf(r)} · live since ${fullDate(r.live_since + "T00:00:00Z")}</span>`);
     });
   }
 
@@ -856,7 +878,7 @@
       <div class="calc-cols">
         <div><div class="stat-label">Counted as zero</div><ul class="calc-list">
           ${contrib ? `<li>${contrib} contributing hit${contrib === 1 ? "" : "s"}: another rule's decision prevailed on the same event</li>` : ""}
-          ${shadow.length ? `<li>${shadow.length} shadow hit${shadow.length === 1 ? "" : "s"} from ${shadowRules.join(", ")}: logged, no client paid</li>` : ""}
+          ${shadow.length ? `<li>${shadow.length} shadow hit${shadow.length === 1 ? "" : "s"} from ${shadowRules.map(rn).join(", ")}: logged, no client paid</li>` : ""}
           ${over ? `<li>${over} hit${over === 1 ? "" : "s"} overridden downstream</li>` : ""}
           <li>Outages: ${inc.items.length ? `${inc.friction.toFixed(0)} points from ${inc.items.map((i) => i.id).join(", ")}, kept in their own band` : "none in this window"}</li></ul></div>
         <div><div class="stat-label">Why a range</div><p class="calc-note">The weights are placeholders (${D.meta.weights_version}). Re-run under ${NW} weightings that keep the same order, half-lives of ${D.config.weighting_sweep.half_life_days.join("–")} days and other hold-time shapes, the score runs ${Math.round(w.score[1])}–${Math.round(w.score[2])} (grades ${w.grade_range.join("–")}).</p></div>
@@ -898,7 +920,7 @@
       }
     }
 
-    card.innerHTML = `<h2>Why ${r.rule_id} keeps firing</h2>
+    card.innerHTML = `<h2>Why ${esc(rn(r.rule_id))} keeps firing</h2>
       <div class="card-sub">${esc(name)}'s ${noun} vs the rule threshold${r.axis === "log" ? " · log scale" : ""}</div>
       <div class="chart-box" id="why-plot"></div>
       <p class="why-text">${esc(text)}</p>
@@ -908,7 +930,7 @@
     const box = document.getElementById("why-plot");
     const width = Math.max(260, box.clientWidth), H = 116;
     const m = { l: 8, r: 8, t: 22, b: 30 };
-    const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, role: "img", "aria-label": `${name}'s values against the ${r.rule_id} threshold and confirmed fraud` }, box);
+    const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, role: "img", "aria-label": `${name}'s values against the ${rn(r.rule_id)} threshold and confirmed fraud` }, box);
     const all = vals.concat(fraud, [today], proposed != null ? [proposed] : []).filter((v) => v > 0 || r.axis !== "log");
     let lo = Math.min(...all), hi = Math.max(...all);
     if (r.axis === "log") { lo = Math.pow(10, Math.floor(Math.log10(lo) * 2) / 2); hi = Math.pow(10, Math.ceil(Math.log10(hi) * 2) / 2); }
@@ -963,32 +985,109 @@
   }
   const ptsOf = (r) => (state.policy === "segment" ? r.windows[state.win].curve.segment_points : r.windows[state.win].curve.points);
 
+  // Interventions (and shadow hits) per rule on the clients the type and region filters select.
+  function ruleHits(types, regions) {
+    const start = W().start, out = {};
+    clients.forEach((c) => {
+      if (types.length && !types.includes(c.type)) return;
+      if (regions.length && !regions.includes(c.region)) return;
+      D.timelines[c.client_id].forEach((h) => {
+        if (h.t < start || (h.a !== "P" && h.a !== "S")) return;
+        const o = out[h.r] || (out[h.r] = { n: 0, shadow: 0 });
+        if (h.a === "P") o.n++; else o.shadow++;
+      });
+    });
+    return out;
+  }
+  const RULE_FILTERS = [
+    { key: "cp", title: "Checkpoint", options: CHECKPOINTS.map((c) => c[0]), label: (k) => CP_LABEL[k] },
+    { key: "type", title: "Client type", options: Object.keys(TYPE_LABELS), label: (t) => TYPE_LABELS[t] },
+    { key: "region", title: "Region", options: REGIONS, label: (x) => x },
+  ];
+  // Rules shown for a set of filters: at a chosen checkpoint, and firing on the chosen clients.
+  function rulesFor(f) {
+    const scoped = f.type.length || f.region.length, hits = scoped ? ruleHits(f.type, f.region) : null;
+    return rules.filter((r) => (!f.cp.length || f.cp.includes(cpKey(r)))
+      && (!state.ruleQuery || `${rn(r.rule_id)} ${r.rule_id} ${r.description}`.toLowerCase().includes(state.ruleQuery.toLowerCase()))
+      && (!scoped || (hits[r.rule_id] && (hits[r.rule_id].n || hits[r.rule_id].shadow))))
+      .map((r) => ({ r, n: scoped ? hits[r.rule_id].n : r.windows[state.win].interventions, scoped }));
+  }
+
+  function renderRulePane() {
+    const pane = document.getElementById("rule-pane");
+    if (!pane) return;
+    const keep = pane.childElementCount ? pane.scrollTop : state.rulePaneScroll;
+    const F = state.ruleFilters;
+    if (!state.rulePaneOpen) {
+      pane.innerHTML = `<button type="button" class="pane-toggle rail" id="rule-pane-toggle" aria-expanded="false" title="Show the rule list">
+        <span aria-hidden="true">»</span><span class="rail-label">Rules · ${rulesFor(F).length}</span></button>`;
+      document.getElementById("rule-pane-toggle").onclick = () => { state.rulePaneOpen = true; renderRule(); };
+      return;
+    }
+    const list = rulesFor(F);
+    const nOn = RULE_FILTERS.reduce((t, f) => t + F[f.key].length, 0);
+    const scoped = F.type.length || F.region.length;
+    const chips = (f) => f.options.map((o) => {
+      const on = F[f.key].includes(o);
+      const n = rulesFor({ ...F, [f.key]: [o] }).length;
+      return `<button type="button" class="chip" data-rfilter="${f.key}" data-value="${o}" aria-pressed="${on}" ${n || on ? "" : "disabled"}>${esc(f.label(o))} <span>${n}</span></button>`;
+    }).join("");
+    const groups = CHECKPOINTS.map(([key, label]) => {
+      const rs = list.filter((x) => cpKey(x.r) === key).sort((a, b) => b.n - a.n);
+      if (!rs.length) return "";
+      return `<div class="pane-group rule-group"><div class="rg-head">${label}<span class="pg-count">${rs.length}</span></div>
+        ${rs.map(({ r, n }) => { const cv = r.windows[state.win].curve; return `<a class="pane-item rule-item" href="#rule/${r.rule_id}" data-pick-rule="${r.rule_id}" aria-current="${r.rule_id === state.ruleId}">
+          <span class="pi-name">${esc(rn(r.rule_id))}</span>
+          <span class="pi-desc">${esc(r.description)}</span>
+          <span class="pi-meta">${r.shadow ? "Shadow · acts on nothing" : `${fmtInt(n)} intervention${n === 1 ? "" : "s"}${scoped ? " on these clients" : ""}`}</span>
+          <span class="tag ${tagFor(cv)}">${esc(cv.label)}</span></a>`; }).join("")}</div>`;
+    }).join("");
+    pane.innerHTML = `
+      <div class="pane-head"><h2>Rules</h2><span class="muted">${list.length} of ${rules.length}</span>
+        <button type="button" class="pane-toggle" id="rule-pane-toggle" aria-expanded="true" title="Hide the rule list">«</button></div>
+      <input id="rule-q" class="pane-search" type="search" placeholder="Search rules" aria-label="Search rules" value="${esc(state.ruleQuery)}" autocomplete="off">
+      <details class="pane-filters" ${state.ruleFiltersOpen ? "open" : ""}><summary>Filters${nOn ? ` · ${nOn} on` : ""}</summary>
+        ${RULE_FILTERS.map((f) => `<div class="f-title">${f.title}</div><div class="chips">${chips(f)}</div>`).join("")}
+        <p class="pane-note">Client type and region keep the rules that intervened on those clients ${W().phrase}, with their counts.</p>
+        ${nOn || state.ruleQuery ? '<button type="button" class="link-btn" id="rule-clear">Clear filters</button>' : ""}</details>
+      <div class="pane-list">${groups || '<p class="muted pane-empty">No rules match these filters.</p>'}
+        <p class="pane-note pane-foot">Tags: how far each rule can be loosened without missing fraud ${info("relax")}</p></div>`;
+
+    pane.scrollTop = keep;
+    showCurrent(pane);
+    wireInfo(pane);
+    document.getElementById("rule-pane-toggle").onclick = () => { state.rulePaneOpen = false; renderRule(); };
+    const q = document.getElementById("rule-q");
+    q.oninput = () => { state.ruleQuery = q.value; renderRulePane(); const n = document.getElementById("rule-q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    pane.querySelectorAll("[data-rfilter]").forEach((b) => (b.onclick = () => {
+      const arr = F[b.dataset.rfilter], i = arr.indexOf(b.dataset.value);
+      if (i >= 0) arr.splice(i, 1); else arr.push(b.dataset.value);
+      renderRulePane();
+    }));
+    const clr = document.getElementById("rule-clear");
+    if (clr) clr.onclick = () => { RULE_FILTERS.forEach((f) => (F[f.key] = [])); state.ruleQuery = ""; renderRulePane(); };
+    pane.querySelector(".pane-filters").addEventListener("toggle", (e) => { state.ruleFiltersOpen = e.target.open; });
+    pane.querySelectorAll("[data-pick-rule]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); state.rulePaneScroll = pane.scrollTop; go("#rule/" + a.dataset.pickRule); }));
+  }
+
   function renderRule() {
     const r = ruleById[state.ruleId];
     const rw = r.windows[state.win];
-    const list = rulesByVolume();
     view.innerHTML = `
       <div class="page-head">
         <div>
-          <div class="crumbs"><a href="#rule">Rule tradeoffs</a> › ${r.rule_id}</div>
-          <div class="title-row"><h1>${r.rule_id}</h1>
-            <span class="title-meta">${r.decision_label} · ${r.checkpoint} · live since ${dayLabel(r.live_since + "T00:00:00Z")} · ${esc(r.description.charAt(0).toLowerCase() + r.description.slice(1).replace(/\.$/, ""))}</span></div>
-          <p class="lead">Drag the threshold to see how much friction it removes and how much fraud it still catches, across every synthetic client.</p>
+          <div class="crumbs">Rule tradeoffs › ${esc(rn(r.rule_id))}</div>
+          <div class="title-row"><h1>${esc(rn(r.rule_id))}</h1>
+            <span class="title-meta">${r.decision_label} · ${cpOf(r)} · live since ${dayLabel(r.live_since + "T00:00:00Z")}</span></div>
+          <p class="lead">${esc(r.description)}</p>
         </div>
         <div class="window"><div class="window-label">Measured on</div>
           <div class="window-range" style="margin:0 0 6px">All ${clients.length} clients · ${W().phrase}</div>
           <div class="seg" role="group" aria-label="Window">${Object.entries(D.meta.windows).map(([k, w]) => `<button type="button" data-win="${k}" aria-pressed="${k === state.win}">${w.label}</button>`).join("")}</div>
         </div>
       </div>
-      <div class="rule-grid">
-        <section class="card rule-list">
-          <div class="card-head"><div><h2>Rules</h2><div class="card-sub">Sorted by interventions caused, ${W().phrase}</div></div></div>
-          ${list.map((x) => `<button class="rule-item" data-rule="${x.rule_id}" aria-current="${x.rule_id === r.rule_id}">
-              <span class="rid">${x.rule_id}</span>
-              <span class="rmeta"><span class="rcount">${fmtInt(x.windows[state.win].interventions)} interventions</span>
-              <span class="tag ${tagFor(x.windows[state.win].curve)}">${esc(x.windows[state.win].curve.label)}</span></span></button>`).join("")}
-          <div class="foot">Tags: how far each rule can be loosened without missing fraud ${info("relax")}</div>
-        </section>
+      <div class="rule-grid${state.rulePaneOpen ? "" : " pane-closed"}">
+        <aside class="list-pane" id="rule-pane" aria-label="Rules"></aside>
         <div class="rule-mid">
         <section class="card">
           <div class="card-head"><h2>What each threshold buys and costs</h2>
@@ -1020,6 +1119,7 @@
       ${footer()}`;
 
     wireCommon();
+    renderRulePane();
     view.querySelectorAll("[data-policy]").forEach((b) => (b.onclick = () => { state.policy = b.dataset.policy; renderRule(); }));
     const more = document.getElementById("more");
     more.addEventListener("toggle", () => { state.detailsOpen = more.open; });
@@ -1043,7 +1143,7 @@
     const cv = r.windows[state.win].curve, pts = ptsOf(r);
     const width = Math.max(300, box.clientWidth), H = 300;
     const m = { l: 40, r: 14, t: 26, b: 40 };
-    const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, role: "img", "aria-label": `Tradeoff curve for ${r.rule_id}` }, box);
+    const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, role: "img", "aria-label": `Tradeoff curve for ${rn(r.rule_id)}` }, box);
     const iw = width - m.l - m.r, ih = H - m.t - m.b, n = r.grid.length;
     const lo = r.grid[0], hi = r.grid[n - 1];
     const fx = (v) => (r.axis === "log" ? (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo)) : (v - lo) / (hi - lo || 1));
@@ -1178,10 +1278,10 @@
     const lost = base - p.fraud_caught_rule;
     const who = state.policy === "segment" ? " for established clients above the high-friction line" : "";
     let statement;
-    if (r.shadow) statement = `${r.rule_id} runs in shadow: it logs what it would have done and no client pays for it. Nothing to remove.`;
-    else if (i === 0) statement = `At today's setting, ${r.rule_id} interrupts clients ${fmtInt(rw.interventions)} times ${periodPhrase()}, across ${fmtInt(rw.fired.clients)} clients. Move the threshold to see what loosening it buys.`;
+    if (r.shadow) statement = `${rn(r.rule_id)} runs in shadow: it logs what it would have done and no client pays for it. Nothing to remove.`;
+    else if (i === 0) statement = `At today's setting, ${rn(r.rule_id)} interrupts clients ${fmtInt(rw.interventions)} times ${periodPhrase()}, across ${fmtInt(rw.fired.clients)} clients. Move the threshold to see what loosening it buys.`;
     else {
-      const head = `${verbFor(r)} ${r.rule_id} from ${fmtVal(r.grid[0], r.unit)} to ${fmtVal(T, r.unit)}${who} removes ${fmtInt(p.interventions_removed)} interventions from ${fmtInt(p.clients_affected)} clients ${periodPhrase()}`;
+      const head = `${verbFor(r)} ${rn(r.rule_id)} from ${fmtVal(r.grid[0], r.unit)} to ${fmtVal(T, r.unit)}${who} removes ${fmtInt(p.interventions_removed)} interventions from ${fmtInt(p.clients_affected)} clients ${periodPhrase()}`;
       statement = lost <= 0 ? `${head}, and catches the same ${base} fraud case${base === 1 ? "" : "s"}.`
         : `${head}, but misses ${lost} of the ${base} fraud cases it catches today.`;
     }
@@ -1210,7 +1310,7 @@
     const canTest = !r.shadow && i > 0 && lost <= 0 && p.interventions_removed > 0;
     if (!canTest) {
       ns.innerHTML = `<h2>Next step</h2><p class="why-text">${r.shadow ? "This rule is already a shadow test: its hits show what clients would have paid, without anyone paying." :
-        cv.verdict === "none" ? `No relaxation to test: the first step already misses fraud this rule catches. ${r.rule_id} is earning its friction.` :
+        cv.verdict === "none" ? `No relaxation to test: the first step already misses fraud this rule catches. ${rn(r.rule_id)} is earning its friction.` :
         lost > 0 ? `This setting misses fraud. Move the threshold back inside the safe range (up to ${fmtVal(r.grid[cv.flat_index], r.unit)}) to propose a shadow test.` :
         "Pick a looser threshold to propose a shadow test."}</p><p class="card-note">Recommendation only. Nothing on this screen changes a live rule.</p>`;
       return;
@@ -1218,7 +1318,7 @@
     const expr = r.expressions[i];
     ns.innerHTML = `<h2>Next step: test it on live traffic, safely</h2>
       <p class="why-text" style="margin-bottom:0">Run a copy of this rule at ${fmtVal(T, r.unit)} in shadow mode. It sees real traffic and logs what it would have done, but never touches a client. After 30 days, compare it with the live rule.</p>
-      <ol class="steps"><li><span class="n">1</span>Clone ${r.rule_id} at ${fmtVal(T, r.unit)}, shadow on</li>
+      <ol class="steps"><li><span class="n">1</span>Clone ${esc(rn(r.rule_id))} at ${fmtVal(T, r.unit)}, shadow on</li>
         <li><span class="n">2</span>Run for 30 days alongside the live rule</li><li><span class="n">3</span>Risk Strategy reviews the comparison</li></ol>
       <button class="btn" id="draft">${state.proposalOpen ? "Hide shadow test proposal" : "Draft shadow test proposal"}</button>
       ${state.proposalOpen ? `<div class="proposal"><pre id="proposal-text">${esc(proposalText(r, i, p, expr))}</pre><button class="btn-secondary btn" id="copy">Copy</button> <span id="copy-status" class="muted" aria-live="polite"></span></div>` : ""}
