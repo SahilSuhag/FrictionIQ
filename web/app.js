@@ -145,9 +145,16 @@
   }
 
   // ------------------------------------------------------------------ routing
-  function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
-  function route() {
-    const [v, arg] = location.hash.replace(/^#/, "").split("/");
+  // Navigation routes directly and records the hash where the frame allows it, so it
+  // also works inside sandboxed viewers that block hash changes.
+  let routed = null;
+  function go(hash) {
+    try { if (location.hash !== hash) history.pushState(null, "", hash); } catch (e) { /* sandboxed frame */ }
+    route(hash);
+  }
+  function route(hash) {
+    routed = hash = hash || location.hash;
+    const [v, arg] = hash.replace(/^#/, "").split("/");
     if (v === "client") { if (arg && clientById[arg]) state.clientId = arg; state.view = "client"; }
     else if (v === "rule") {
       if (arg && ruleById[arg] && arg !== state.ruleId) { state.ruleId = arg; state.proposalOpen = false; }
@@ -991,10 +998,17 @@
       const hit = id ? clientById[id] : clients.find((c) => c.name.toLowerCase() === input.value.trim().toLowerCase());
       if (hit) { pop.hidden = true; input.value = ""; go("#client/" + hit.client_id); }
     });
-    document.querySelector('.nav a[data-nav="client"]').onclick = (e) => { e.preventDefault(); go("#client/" + state.clientId); };
-    document.querySelector('.nav a[data-nav="rule"]').onclick = (e) => { e.preventDefault(); go("#rule/" + state.ruleId); };
   })();
-  window.addEventListener("hashchange", route);
+  // In-app links route directly ("#client" and "#rule" keep the current client and rule).
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    const h = a.getAttribute("href");
+    go(h === "#client" ? "#client/" + state.clientId : h === "#rule" ? "#rule/" + state.ruleId : h);
+  });
+  window.addEventListener("popstate", () => route(location.hash));
+  window.addEventListener("hashchange", () => { if (location.hash !== routed) route(location.hash); });
   let rt;
   window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 150); });
   route();
