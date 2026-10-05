@@ -150,6 +150,7 @@
     review: () => `<b>Ops review time</b><br>Every hold becomes a manual review. This assumes 30 minutes each; the PRD's taxonomy puts it at 20–40.`,
     removed: () => `<b>Friction removed</b><br>The fall in friction score, summed over every client, as a share of what this rule causes today. It is a band because the weights are placeholders: ${NW} weightings with the same ordering were tried.`,
     perfraud: () => `<b>Ratio: interventions per fraud case</b><br>The rule's interventions divided by the fraud cases it caught. 20 : 1 means it intervened 20 times for each fraud case it caught, so most of its interventions landed on good clients. The higher the ratio, the more room there may be to tune the rule. Its <i>Room to relax</i> tag says whether it can be loosened without missing fraud.`,
+    rings: () => `<b>The same fraud cases, seen two ways</b><br><b>Of all interventions</b>: the share that found fraud. The orange part of the ring is good clients interrupted for nothing.<br><b>Of all fraud</b>: the share the rules caught. The grey part is fraud that got through (fraud loss).`,
     gridints: () => `<b>Interventions</b><br>Every intervention the clients in this grade received in the window, and that grade's share of all interventions. Each client's own count is in the list behind the client numbers.`,
     txn: () => `<b>Transactions</b><br>The money movements the rules screened in this window: card payments captured, settlements and payouts, with their total value. Boarding checks are not transactions.`,
     fraudcases: () => `<b>Fraud cases caught</b><br>Confirmed fraud cases this rule fired on. One case can trip more than one rule, so this column adds up to more than the fraud saved total.`,
@@ -266,15 +267,17 @@
     const metric = (label, value, change, fallback, extra, cls) => `<div class="metric${cls ? " " + cls : ""}">
       <div class="m-label">${label}${extra || ""}</div><div class="m-value">${value}</div>
       <div class="m-delta">${change ? `${change} <span>vs previous ${W().days} days</span>` : `<span>${fallback}</span>`}</div></div>`;
-    const ring = (frac, color, label, value, sub) => {
+    const ring = (frac, color, label, value, sub, track) => {
       const C = 2 * Math.PI * 18;
       return `<div class="ring-item"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
-          <circle cx="24" cy="24" r="18" fill="none" stroke="var(--border)" stroke-width="6"/>
+          <circle cx="24" cy="24" r="18" fill="none" stroke="${track || "var(--border)"}" stroke-width="6"/>
           <circle cx="24" cy="24" r="18" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round"
             stroke-dasharray="${(C * frac).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 24 24)"/></svg>
-        <div><div class="r-label">${label}</div><div class="r-value">${value}</div><div class="r-sub">${sub}</div></div></div>`;
+        <div><div class="r-label">${label}</div><div><span class="r-value">${value}</span> <span class="r-sub">${sub}</span></div></div></div>`;
     };
     const share = P.free_to_remove / Math.max(P.interventions, 1);
+    // the interventions that found fraud are the fraud cases caught: one number, seen from both sides
+    const found = P.interventions - L.n, hitRate = found / Math.max(P.interventions, 1), catchRate = F.caught / Math.max(F.total, 1);
     const est = clients.filter((c) => c.band === "established").length;
     const FP = prev && prev.fraud;
     const usdNow = L.held_usd + L.denied_usd;
@@ -305,8 +308,9 @@
             <div class="dc-sub">${pct(100 * share)} of all interventions · ${fmtUsd(P.freed.usd)} of payouts · ${fmtInt(P.free_to_remove_clients)} clients</div>
           </section>
           <section class="card ring-card">
-            ${ring(L.n / Math.max(P.interventions, 1), "var(--accent)", "Found no fraud", `${(100 * L.n / Math.max(P.interventions, 1)).toFixed(1)}%`, `${fmtInt(L.n)} of ${fmtInt(P.interventions)} interventions`)}
-            ${ring(F.caught / Math.max(F.total, 1), "var(--fraud)", "Fraud caught", `${(100 * F.caught / Math.max(F.total, 1)).toFixed(1)}%`, `${fmtInt(F.caught)} of ${fmtInt(F.total)} cases`)}
+            <h3>${fmtInt(found)} fraud cases caught, two ways ${info("rings", "How to read these rings")}</h3>
+            ${ring(hitRate, "var(--fraud)", "Of all interventions", `${(100 * hitRate).toFixed(1)}%`, `found fraud: about 1 in ${Math.round(1 / Math.max(hitRate, 1e-9))}`, "var(--lilac)")}
+            ${ring(catchRate, "var(--fraud)", "Of all fraud", `${(100 * catchRate).toFixed(1)}%`, `was caught: ${fmtInt(F.caught)} of ${fmtInt(F.total)}`)}
           </section>
         </div>
       </div>
