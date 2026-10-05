@@ -35,38 +35,47 @@ window selector and the threshold slider respond instantly.
 
 ## The three screens
 
-They follow the Figma designs: Salt Design System, Legacy theme, Open Sans. Each screen has a
-30 days / 60 days / 1 year window.
+They follow the Figma designs' layout and content, in Open Sans, restyled in a lavender
+palette: Pale Grey `#FEFDFE` cards on a Diamond Cut `#EBE9F1` page, Italian Fitch `#D1C8E7` and
+Mithril Silver `#BCB9C1` for quiet data, Purple Anemone `#8B67F2` for friction and the rule at
+fault, and Dark Drama `#5A3A38` for fraud. The A–F grade colours stay as the mock has them. Each
+screen has a 30 days / 60 days / 1 year window.
+
+Each screen is kept to a few headline numbers. Every concept is shown once, and supporting detail
+sits behind a disclosure (**Details**, **How it's calculated**, **Method and success metrics**).
 
 | Screen | Answers | What's on it |
 |---|---|---|
-| **Home** (portfolio) | How big is this, and where do I look first? | Four headline numbers; the friction ledger in dollars and hours; three key findings; every client plotted by friction score against good-client band, with the "good clients, heavy friction" quadrant shaded; A–F grade distribution; good clients to look at first; rules causing the most friction with their free stretch |
-| **Client friction detail** | Is this good client being over-challenged, and by which rule? | One-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); time waiting on their money; payouts denied; share from the top rule; percentile among similar clients; one timeline lane per rule; intervention log with rule tooltips; good-client evidence; "why this rule keeps firing" plot; how the score is calculated, intervention by intervention |
-| **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Rule list with free-stretch tags; the curve (friction removed as a band across weightings, fraud still caught as a line, free stretch shaded and named); a threshold slider aligned under the x-axis (or type a value); friction removed, clients no longer interrupted and fraud still caught; counting in dollars, today against the selected threshold; the plain-language sentence; a shadow-test proposal you can draft and copy |
+| **Home** (portfolio) | How big is this, and where do I look first? | Four headline numbers with the change against the previous window (interventions, payouts held or denied, good clients with heavy friction, friction free to remove), and fraud caught beneath for balance; one key finding, the 12-month trend and the rule behind it; every client plotted by friction score against good-client band, with the "good clients, heavy friction" quadrant shaded and the A–F counts as its legend; good clients to look at first; one table of the rules causing the most friction (interventions, payouts held or denied, interventions per fraud case caught, free stretch), with the worst in each column highlighted |
+| **Client friction detail** | Is this good client being over-challenged, and by which rule? | One-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); time waiting on their money; payouts denied; share from the top rule; percentile among similar clients; one timeline lane per rule; intervention log with the points each intervention adds and the total; good-client evidence; "why this rule keeps firing" plot; how the score is calculated, collapsed until asked for |
+| **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Rule list with free-stretch tags; the curve (friction removed as a band across weightings, fraud still caught as a line, free stretch shaded and named); a threshold slider aligned under the x-axis (or type a value); three numbers against today (interventions removed, payouts no longer held or denied, fraud still caught); the plain-language sentence; a shadow-test proposal you can draft and copy. **Details** holds the full dollar ledger, the option to apply the change only to established high-friction clients, and the method |
 
 ## Friction, counted (the differentiator)
 
 Fraud capture is reported today. Friction is not, because nothing adds it up. FrictionIQ
 compiles it in two ways that appear throughout the screens:
 
-- **Measured units, no weights.** The **friction ledger** on Home is built from the logged rule
-  hits alone. It covers interventions that found no fraud, payouts held for review ($ and
-  client-days waiting), legitimate payouts denied ($), settlement limited ($) and ops review
-  hours, with fraud caught alongside for balance. Each rule page has the same view in a
-  **Counting in dollars** card, comparing today with the selected threshold. That card includes
-  the rule's interventions per fraud case caught, and legitimate dollars held or denied per fraud
-  dollar stopped. Review time assumes 30 minutes per hold (the PRD says 20–40).
-- **The friction score**, a weighted index for ranking clients. Each client page shows **how the
-  score is calculated**: one row per intervention with its decision weight × hold-time factor ×
-  recency = points, the total, the grade cutoff, what counted as zero (contributing hits,
-  shadow hits, outages) and why the score is a range. Every other screen explains the score
-  in a short hover (the ⓘ buttons).
+- **Measured units, no weights.** The headline numbers on Home are built from the logged rule
+  hits alone: interventions, legitimate payouts held or denied ($, with client-days waiting in
+  the hover), and friction that can be removed at no fraud cost, each against the previous
+  window, with fraud caught alongside for balance. The full ledger (interventions that found no
+  fraud, payouts held and denied, client-days waiting, ops review hours, fraud caught) is under
+  **Details → Counting in dollars** on each rule page, comparing today with the selected
+  threshold. It includes the rule's interventions per fraud case caught, and legitimate dollars
+  held or denied per fraud dollar stopped. Review time assumes 30 minutes per hold (the PRD says
+  20–40).
+- **The friction score**, a weighted index for ranking clients. Each client's intervention log
+  has a **Points** column that adds up to the score; hover a value for decision weight ×
+  hold-time factor × recency. **How it's calculated** opens the formula, the grade cutoff, what
+  counted as zero (contributing hits, shadow hits, outages) and why the score is a range. Every
+  other screen explains the score in a short hover (the ⓘ buttons).
 
-**Key findings** on Home are computed from the ledger, not written by hand:
+The **key finding** on Home and the highlights in its rule table are computed, not written by
+hand:
 
-- **Trend:** the 12-month series, and the rule whose launch drove the latest change.
-- **Efficiency:** interventions per fraud case caught, by rule.
-- **In dollars:** the rule that costs legitimate clients the most, and where it ranks by count.
+- **Key finding:** the 12-month series, and the rule whose launch drove the latest change.
+- **Rule table:** the costliest rule in dollars and the least efficient (most interventions per
+  fraud case caught) are highlighted.
 
 On seed 4127:
 - Friction more than doubled after `payout_limit_100` went live: 489 a month on average, then

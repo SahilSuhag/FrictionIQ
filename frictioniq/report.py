@@ -208,6 +208,11 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
             "fraud": {"caught": int(caught_ev.size), "total": int(fraud_w.sum()),
                       "caught_usd": _r(amt_ev[caught_ev].sum(), 0), "total_usd": _r(amt_ev[fraud_w].sum(), 0)},
             "freed": ra["freed"],
+            # the previous window of the same length, for "vs previous period" comparisons
+            "prev": None if ds.as_of - 2 * days * 24 < 0 else {
+                "interventions": int((base.prevailing & (ds.hit_t >= ds.as_of - 2 * days * 24) & ~wb["mask"]).sum()),
+                "ledger": sweep.ledger(ds, base.prevailing & legit & (ds.hit_t >= ds.as_of - 2 * days * 24) & ~wb["mask"], amount),
+            },
             "rules": [{"rule_id": r.rule_id, "n": curves[r.rule_id]["points"][0]["ledger"]["n"],
                        "usd": curves[r.rule_id]["points"][0]["ledger"]["denied_usd"]
                        + curves[r.rule_id]["points"][0]["ledger"]["held_usd"],

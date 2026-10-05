@@ -244,13 +244,18 @@
   const rulesByVolume = () => rules.slice().sort((a, b) => b.windows[state.win].interventions - a.windows[state.win].interventions);
 
   function renderHome() {
-    const P = D.portfolio[state.win];
+    const P = D.portfolio[state.win], L = P.ledger, F = P.fraud;
     const heavy = heavyClients();
     const look = state.showAllHeavy ? heavy : heavy.slice(0, 5);
-    const rr = rulesByVolume().filter((r) => r.windows[state.win].interventions > 0).slice(0, 5);
-    const maxR = rr.length ? rr[0].windows[state.win].interventions : 1;
-    const heavyCount = HEAVY.reduce((s, g) => s + (P.grade_counts[g] || 0), 0);
-    const kpi = (label, value, sub) => `<div class="card kpi"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+    const prev = P.prev;
+    const delta = (now, before) => {
+      if (before == null || !before) return "";
+      const d = (100 * (now - before)) / before;
+      return `<span class="delta" title="vs previous ${W().label}">${d >= 0 ? "▲" : "▼"} ${pct(Math.abs(d))}</span>`;
+    };
+    const kpi = (label, value, sub, extra, hl) => `<div class="card kpi${hl ? " hl" : ""}"><div class="label">${label}${extra || ""}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+    const usdNow = L.held_usd + L.denied_usd;
+    const usdPrev = prev ? prev.ledger.held_usd + prev.ledger.denied_usd : null;
 
     view.innerHTML = `
       <div class="page-head">
@@ -259,81 +264,83 @@
         ${windowControl()}
       </div>
       <div class="kpis">
-        ${kpi("Interventions", fmtInt(P.interventions), `across ${P.clients} synthetic clients`)}
-        ${kpi("Clients interrupted", fmtInt(P.clients_interrupted), `${pct((100 * P.clients_interrupted) / P.clients)} had at least one`)}
-        ${kpi("Good clients, heavy friction", fmtInt(P.good_clients_heavy_friction), `Established band, graded ${HEAVY.join(" or ")}`)}
-        ${kpi("Free to remove", fmtInt(P.free_to_remove), "interventions, with no change in fraud caught")}
+        ${kpi("Interventions", fmtInt(P.interventions), `${pct((100 * L.n) / Math.max(P.interventions, 1))} found no fraud${prev ? ` · ${fmtInt(prev.interventions)} the ${W().days}&nbsp;days before` : ""}`, delta(P.interventions, prev && prev.interventions), true)}
+        ${kpi("Payouts held or denied", fmtUsd(usdNow), `${fmtInt(L.wait_days)} client-days waiting on money`, `${delta(usdNow, usdPrev)} ${info("ledger", "About these figures")}`)}
+        ${kpi("Good clients, heavy friction", fmtInt(P.good_clients_heavy_friction), `Established band, graded ${HEAVY.join(" or ")}`, ` ${info("score", "How the friction score works")}`)}
+        ${kpi("Free to remove", fmtInt(P.free_to_remove), `interventions · ${fmtUsd(P.freed.usd)} of payouts, fraud caught unchanged`)}
       </div>
-      ${ledgerCard(P)}
-      ${findingsSection(P)}
+      <p class="guardrail">For balance: fraud caught <b>${F.caught} of ${F.total}</b> cases (${fmtUsd(F.caught_usd)} of ${fmtUsd(F.total_usd)}), measured on every client.</p>
+      ${bannerSection()}
       <div class="home-grid">
-        <div class="home-left">
-          <section class="card">
-            <h2>Who carries the friction ${info("score", "How the friction score works")}</h2>
-            <div class="card-sub">Each dot is a client, coloured by friction grade. Top right is the problem: good clients we keep interrupting.</div>
-            <div class="chart-box" id="scatter"></div>
-          </section>
-          <section class="card">
-            <div class="card-head"><h2>Friction grades across all clients ${info("score", "How the friction score works")}</h2>
-              <span class="card-note">${HEAVY.join(" and ")} = heavy friction · ${heavyCount} clients (${pct((100 * heavyCount) / P.clients)})</span></div>
-            <div class="grade-bar">${GRADES.map((g) => `<div style="flex:${Math.max(P.grade_counts[g], 0.001)};background:${gradeColor(g)}" title="${g}: ${P.grade_counts[g]} clients"></div>`).join("")}</div>
-            <div class="grade-labels">${GRADES.map((g) => `<div style="flex:${Math.max(P.grade_counts[g], 0.001)}">${g} ${P.grade_counts[g]}</div>`).join("")}</div>
-          </section>
-        </div>
-        <div class="home-right">
-          <section class="card">
-            <h2>Good clients to look at first</h2>
-            <div class="card-sub">Established band, heaviest friction first</div>
-            <div class="look-list">${look.map((c) => {
-              const w = c.windows[state.win];
-              return `<div class="look-row">
-                <span class="grade-badge" style="background:${gradeColor(w.grade)}" aria-label="Grade ${w.grade}">${w.grade}</span>
-                <div style="min-width:0"><a href="#client/${c.client_id}" class="name">${esc(c.name)}</a><div class="cause">${esc(causeText(c))}</div></div>
-                <span>${w.incident.items.length ? '<span class="tag tag-incident">Incident</span>' : ""}</span>
-                <span class="score">${Math.round(w.score[0])}</span></div>`;
-            }).join("") || '<p class="muted" style="padding:10px 0">No established clients are graded E or F in this window.</p>'}</div>
-            ${heavy.length > 5 ? `<button class="see-all" id="see-all">${state.showAllHeavy ? "Show the top 5" : `See all ${heavy.length} good clients with heavy friction →`}</button>` : ""}
-          </section>
-          <section class="card">
-            <h2>Rules causing the most friction</h2>
-            <div class="card-sub">Interventions in the ${W().phrase}, and how far each can be loosened for free</div>
-            <div class="rule-bars">${rr.map((r, i) => {
-              const rw = r.windows[state.win];
-              return `<div class="rule-bar-row">
-                <button class="rname${i === 0 ? " top" : ""}" data-rule="${r.rule_id}">${r.rule_id}</button>
-                <span class="tag ${tagFor(rw.curve)}">${esc(rw.curve.label)}</span>
-                <div class="bar-line"><span class="bar${i === 0 ? " top" : ""}" style="width:${Math.max(2, (100 * rw.interventions) / maxR) * 0.6}%"></span>${fmtInt(rw.interventions)}${(() => { const l = rw.curve.points[0].ledger; const usd = l ? l.denied_usd + l.held_usd : 0; return usd ? ` · ${fmtUsd(usd)} of payouts held or denied` : ""; })()}</div>
-              </div>`;
-            }).join("")}</div>
-          </section>
-        </div>
+        <section class="card">
+          <div class="card-head"><h2>Who carries the friction</h2></div>
+          <div class="card-sub">Each dot is a client, coloured by friction grade. Top right: good clients we keep interrupting.</div>
+          <div class="chart-box" id="scatter"></div>
+          <div class="grade-legend">${GRADES.map((g) => `<span><i style="background:${gradeColor(g)}"></i>${g} ${P.grade_counts[g]}</span>`).join("")}
+            <span class="muted">${HEAVY.join(" and ")} = heavy friction</span></div>
+        </section>
+        <section class="card">
+          <h2>Good clients to look at first</h2>
+          <div class="card-sub">Established band, heaviest friction first</div>
+          <div class="look-list">${look.map((c) => {
+            const w = c.windows[state.win];
+            return `<div class="look-row">
+              <span class="grade-badge" style="background:${gradeColor(w.grade)}" aria-label="Grade ${w.grade}">${w.grade}</span>
+              <div style="min-width:0"><a href="#client/${c.client_id}" class="name">${esc(c.name)}</a><div class="cause">${esc(causeText(c))}</div></div>
+              <span>${w.incident.items.length ? '<span class="tag tag-incident">Incident</span>' : ""}</span>
+              <span class="score">${Math.round(w.score[0])}</span></div>`;
+          }).join("") || '<p class="muted" style="padding:10px 0">No established clients are graded E or F in this window.</p>'}</div>
+          ${heavy.length > 5 ? `<button class="see-all" id="see-all">${state.showAllHeavy ? "Show the top 5" : `See all ${heavy.length} →`}</button>` : ""}
+        </section>
       </div>
-      ${methodSection()}
-      ${footer(`Outage friction is tracked separately: ${P.incidents.count} incident${P.incidents.count === 1 ? "" : "s"} this window affected ${P.incidents.clients_affected} clients. It is never added to friction scores, because no rule caused it.`)}`;
+      ${ruleTable(P)}
+      <footer class="footer">
+        <div>Synthetic data · seed ${D.meta.seed} · weights ${D.meta.weights_version} are placeholders · outages tracked separately (${P.incidents.count} this window, ${P.incidents.clients_affected} clients), never added to scores ·
+          <button class="link-btn" id="method-toggle" aria-expanded="${!!state.showMethod}">Method and success metrics</button></div>
+        ${state.showMethod ? methodSection() : ""}
+      </footer>`;
 
     wireCommon();
     const sa = document.getElementById("see-all");
     if (sa) sa.onclick = () => { state.showAllHeavy = !state.showAllHeavy; renderHome(); };
+    document.getElementById("method-toggle").onclick = () => { state.showMethod = !state.showMethod; renderHome(); };
     drawScatter(document.getElementById("scatter"));
     drawTrend(document.getElementById("trend-chart"));
   }
 
-  function ledgerCard(P) {
-    const L = P.ledger, F = P.fraud, fr = P.freed;
-    const cell = (label, value, sub, key) => `<div class="led-cell"><div class="label">${label}${key ? " " + info(key) : ""}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
-    return `<section class="card ledger" aria-label="Friction ledger">
-      <div class="card-head"><div><h2>Friction ledger ${info("ledger", "About the friction ledger")}</h2>
-        <div class="card-sub">What our fraud rules cost clients in the ${W().phrase}, counted from every rule hit. Fraud capture is reported today; this half had no number until now.</div></div></div>
-      <div class="led-grid">
-        ${cell("Interventions that found no fraud", fmtInt(L.n), `of ${fmtInt(P.interventions)} interventions, on ${fmtInt(L.clients)} clients`, "nofraud")}
-        ${cell("Payouts held for review", fmtUsd(L.held_usd), `${fmtInt(L.held_n)} payouts · ${fmtInt(L.wait_days)} client-days waiting`)}
-        ${cell("Legitimate payouts denied", fmtUsd(L.denied_usd), `${fmtInt(L.denied_n)} payouts`)}
-        ${cell("Settlement limited", fmtUsd(L.limited_usd), `${fmtInt(L.limited_n)} limits applied`)}
-        ${cell("Ops review time", `${fmtInt(L.review_hours)} h`, `${fmtInt(L.reviews)} manual reviews`, "review")}
-        <div class="led-cell guard"><div class="label">Fraud caught, for balance</div><div class="value">${F.caught} of ${F.total}</div>
-          <div class="sub">${fmtUsd(F.caught_usd)} of ${fmtUsd(F.total_usd)} in fraud stopped</div></div>
-      </div>
-      <p class="led-free"><b>Free to remove</b> with no change in fraud caught: ${fmtInt(P.free_to_remove)} interventions · ${fmtUsd(fr.usd)} of payouts no longer held or denied · ${fmtInt(fr.wait_days)} client-days of waiting · ${fmtInt(fr.review_hours)} review hours</p>
+  function bannerSection() {
+    const t = trendFacts();
+    const ratio = t.last.n / t.avg;
+    const head = ratio >= 2 ? `Friction more than doubled${t.launch ? ` after ${t.rise} went live` : ""}`
+      : `Friction ${ratio >= 1 ? "rose" : "fell"} ${pct(Math.abs(100 * (ratio - 1)))} in the last 30 days`;
+    return `<section class="card banner">
+      <div><div class="eyebrow">Key finding</div><h3>${head}</h3>
+        <p>Interventions that found no fraud averaged ${fmtInt(t.avg)} a month, then reached ${fmtInt(t.last.n)} in the last 30 days.
+        ${t.rise}${t.launch ? `, live since ${dayLabel(t.launch.date + "T00:00:00Z")},` : ""} accounts for ${fmtInt(t.last.by_rule[t.rise] || 0)} of them.</p>
+        <button class="btn btn-soft" data-rule="${t.rise}">Open ${t.rise} →</button></div>
+      <div class="chart-box" id="trend-chart"></div>
+    </section>`;
+  }
+
+  function ruleTable(P) {
+    const stats = Object.fromEntries(P.rules.map((r) => [r.rule_id, r]));
+    const rows = rulesByVolume().filter((r) => !r.shadow && r.windows[state.win].interventions > 0);
+    const per = (r) => { const s = stats[r.rule_id]; return s.fraud ? s.n / s.fraud : null; };
+    const usdOf = (r) => stats[r.rule_id].usd;
+    const maxUsd = Math.max(...rows.map(usdOf)), maxPer = Math.max(...rows.map((r) => per(r) || 0));
+    const maxN = Math.max(...rows.map((r) => r.windows[state.win].interventions));
+    return `<section class="card">
+      <div class="card-head"><div><h2>Rules causing the most friction</h2><div class="card-sub">${W().phrase[0].toUpperCase() + W().phrase.slice(1)} · highlighted: the costliest in dollars and the least efficient</div></div></div>
+      <div class="table-scroll"><table class="rule-table"><thead><tr><th>Rule</th><th>Interventions</th><th class="num">Payouts held or denied</th>
+        <th class="num">Per fraud case caught ${info("perfraud")}</th><th>Free stretch</th></tr></thead><tbody>
+      ${rows.map((r, i) => {
+        const rw = r.windows[state.win], u = usdOf(r), pr = per(r);
+        return `<tr><td><button class="rname${i === 0 ? " top" : ""}" data-rule="${r.rule_id}">${r.rule_id}</button></td>
+          <td><div class="inline-bar"><span style="width:${(100 * rw.interventions) / maxN}%" class="${i === 0 ? "top" : ""}"></span><b class="num">${fmtInt(rw.interventions)}</b></div></td>
+          <td class="num">${u ? `<span class="${u === maxUsd ? "hl-cell" : ""}">${fmtUsd(u)}</span>` : '<span class="muted">—</span>'}</td>
+          <td class="num">${pr == null ? '<span class="muted">—</span>' : `<span class="${pr === maxPer ? "hl-cell" : ""}">${fmt1(pr)}</span>`}</td>
+          <td><span class="tag ${tagFor(rw.curve)}">${esc(rw.curve.label)}</span></td></tr>`;
+      }).join("")}</tbody></table></div>
     </section>`;
   }
 
@@ -345,54 +352,16 @@
     return { B, last, avg, rise, launch: D.trend.launches.find((l) => l.rule_id === rise) };
   }
 
-  function findingsSection(P) {
-    const t = trendFacts();
-    const ratio = t.last.n / t.avg;
-    const h1 = ratio >= 2 ? `Friction more than doubled${t.launch ? ` after ${t.rise} went live` : ""}`
-      : `Friction ${ratio >= 1 ? "rose" : "fell"} ${pct(Math.abs(100 * (ratio - 1)))} in the last 30 days`;
-    const p1 = `Interventions that found no fraud averaged ${fmtInt(t.avg)} a month for 11 months, then reached ${fmtInt(t.last.n)} in the last 30 days. ${t.rise}${t.launch ? `, live since ${dayLabel(t.launch.date + "T00:00:00Z")},` : ""} accounts for ${fmtInt(t.last.by_rule[t.rise] || 0)} of them, and ${fmtInt(t.last.established)} landed on established clients.`;
-
-    const eff = P.rules.filter((r) => !r.shadow && r.fraud >= 3 && r.n >= 5).map((r) => ({ ...r, ratio: r.n / r.fraud })).sort((a, b) => b.ratio - a.ratio);
-    const usd = P.rules.filter((r) => !r.shadow && r.usd > 0).sort((a, b) => b.usd - a.usd);
-    const byCount = P.rules.filter((r) => !r.shadow).sort((a, b) => b.n - a.n).map((r) => r.rule_id);
-    const bars = (rows, val, label, maxV, hi) => `<div class="mini-bars">${rows.map((r) => `<button class="mb-row" data-rule="${r.rule_id}">
-        <span class="mb-name">${r.rule_id}</span><span class="mb-track"><span class="mb-bar${r.rule_id === hi ? " top" : ""}" style="width:${Math.max(2, (100 * val(r)) / maxV)}%"></span></span>
-        <span class="mb-val">${label(r)}</span></button>`).join("")}</div>`;
-
-    let card2 = "", card3 = "";
-    if (eff.length >= 2) {
-      const worst = eff[0], best = eff[eff.length - 1];
-      card2 = `<section class="card finding"><div class="eyebrow">Efficiency · ${W().phrase} ${info("perfraud")}</div>
-        <h3>${worst.rule_id} interrupts clients ${fmt1(worst.ratio)} times for every fraud case it catches</h3>
-        <p>The tightest rule, ${best.rule_id}, does it ${fmt1(best.ratio)} times. Same fraud protection question, very different cost to clients.</p>
-        ${bars(eff.slice(0, 6), (r) => r.ratio, (r) => `${fmt1(r.ratio)} per case`, eff[0].ratio, worst.rule_id)}</section>`;
-    }
-    if (usd.length) {
-      const top = usd[0], rank = byCount.indexOf(top.rule_id) + 1;
-      card3 = `<section class="card finding"><div class="eyebrow">In dollars · ${W().phrase} ${info("ledger")}</div>
-        <h3>${rank > 1 ? `Counted in dollars, ${top.rule_id} costs clients the most` : `${top.rule_id} costs clients the most, by count and in dollars`}</h3>
-        <p>${fmtUsd(top.usd)} of legitimate payouts denied or held${rank > 1 ? `, though it ranks ${ordinal(rank)} by number of interventions (${fmtInt(top.n)}). Counting interventions alone would miss it.` : "."}</p>
-        ${bars(usd.slice(0, 6), (r) => r.usd, (r) => `${fmtUsd(r.usd)} · ${fmtInt(r.n)}`, usd[0].usd, top.rule_id)}</section>`;
-    }
-    return `<div class="findings-head"><h2>Key findings</h2><span class="card-note">Computed from the friction ledger, not written by hand</span></div>
-      <div class="findings">
-        <section class="card finding"><div class="eyebrow">Trend · last 12 months</div><h3>${h1}</h3><p>${p1}</p>
-          <div class="chart-box" id="trend-chart"></div>
-          <button class="see-all" data-rule="${t.rise}">Open ${t.rise} →</button></section>
-        ${card2}${card3}
-      </div>`;
-  }
-
   function drawTrend(box) {
     if (!box) return;
     const t = trendFacts();
-    const width = Math.max(240, box.clientWidth), H = 120, m = { l: 4, r: 4, t: 16, b: 18 };
+    const width = Math.max(240, box.clientWidth), H = 150, m = { l: 4, r: 4, t: 18, b: 18 };
     const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, role: "img", "aria-label": "Interventions that found no fraud, by month, last 12 months" }, box);
     const n = t.B.length, bw = (width - m.l - m.r) / n, max = Math.max(...t.B.map((b) => b.n)) * 1.15;
     const ys = (v) => m.t + (H - m.t - m.b) * (1 - v / max);
     t.B.forEach((b, i) => {
       const x = m.l + i * bw + 2, last = i === n - 1;
-      const bar = el("path", { d: `M${x},${ys(0)} V${ys(b.n) + 3} q0,-3 3,-3 h${bw - 10} q3,0 3,3 V${ys(0)} Z`, fill: last ? "var(--orange)" : "var(--grey-2)" }, svg);
+      const bar = el("path", { d: `M${x},${ys(0)} V${ys(b.n) + 3} q0,-3 3,-3 h${bw - 10} q3,0 3,3 V${ys(0)} Z`, fill: last ? "var(--accent)" : "var(--lilac)" }, svg);
       bindTip(bar, `<b>${dayLabel(b.start)} – ${dayLabel(b.end)}</b><br>${fmtInt(b.n)} interventions that found no fraud<br>${fmtInt(b.established)} on established clients`);
       if (last) txt(svg, x + (bw - 4) / 2, ys(b.n) - 4, fmtInt(b.n), { "text-anchor": "middle", class: "t-strong" });
       if (i === 0 || last || i === Math.floor(n / 2)) txt(svg, x + (bw - 4) / 2, H - 4, MONTHS[dt(b.end).getUTCMonth()], { "text-anchor": "middle" });
@@ -474,7 +443,7 @@
       const left = c.band === "established" ? x - bw - 12 : x + 12;
       const top = Math.max(m.t + 2, Math.min(y - 12, m.t + ih - 40));
       g.setAttribute("transform", `translate(${left + 7},${top + 15})`);
-      const rect = el("rect", { x: left, y: top, width: bw, height: 36, fill: "#fff", stroke: "var(--border-strong)" });
+      const rect = el("rect", { x: left, y: top, width: bw, height: 36, rx: 8, fill: "var(--surface)", stroke: "var(--lilac)" });
       svg.insertBefore(rect, g);
     });
   }
@@ -501,7 +470,7 @@
       ["Rules with no free stretch", "unknown today", M.no_free_stretch.join(", ") || "none"],
     ];
     const w = D.config.decision_weights;
-    return `<details class="card method"><summary>Method and success metrics · ${W().phrase}</summary>
+    return `<details class="card method" open><summary>Method and success metrics · ${W().phrase}</summary>
       <div class="table-scroll"><table><thead><tr><th>Measure</th><th>Baseline</th><th>Result</th></tr></thead><tbody>
       ${rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("")}</tbody></table></div>
       <p class="card-note" style="margin-top:12px">Friction score = Σ over prevailing interventions of decision weight × hold-duration factor × recency decay.
@@ -581,13 +550,12 @@
       <div class="client-grid">
         <div class="client-left">
           <section class="card">
-            <div class="card-head"><h2>${glanceTitle()} at a glance</h2><span class="card-note">Weights ${D.meta.weights_version} are placeholders, so every score is shown as a range</span></div>
+            <div class="card-head"><h2>${glanceTitle()} at a glance</h2></div>
             <div class="glance">
               <div><div class="stat-label">Friction grade ${info("score", "How the friction score works")}</div>
-                <div class="grade-big"><span class="letter" style="color:${gradeColor(w.grade)}">${w.grade}</span><span class="word">${gradeWord(w.grade)}</span></div>
-                <div id="grade-scale"></div>
-                <div class="stat-sub">${w.grade_range[0] === w.grade_range[1] ? w.grade_range[0] : w.grade_range.join("–")} across weightings · score ${Math.round(total)}</div>
-                <button class="see-all calc-link" id="calc-link">How the score is calculated ↓</button></div>
+                <div class="grade-big"><span class="letter" style="background:${gradeColor(w.grade)}">${w.grade}</span><span class="word">${gradeWord(w.grade)}</span></div>
+                <div class="stat-sub">Score ${Math.round(total)} · range ${Math.round(w.score[1])}–${Math.round(w.score[2])}</div>
+                <button class="see-all calc-link" id="calc-link">How it's calculated ↓</button></div>
               <div><div class="stat-label">Interventions</div>
                 <div class="arrow-pair">${w.prev_n == null ? "" : `<div class="col"><span class="stat-value muted">${w.prev_n}</span><span>${prevMonth}</span></div><span class="arrow">→</span>`}
                   <div class="col"><span class="stat-value accent">${w.n}</span><span>${nowLabel}</span></div></div></div>
@@ -600,29 +568,28 @@
             </div>
             <div class="glance-bottom">
               <div><div class="stat-label">Caused by</div>
-                ${topR ? `<div class="share-bar">${byRule.map(([k, v], i) => `<div style="flex:${Math.max(v.score, 0.01)};background:${k === top ? "var(--orange)" : i % 2 ? "var(--grey-2)" : "var(--grey-1)"}" title="${k}: ${v.count}"></div>`).join("")}</div>
+                ${topR ? `<div class="share-bar">${byRule.map(([k, v], i) => `<div style="flex:${Math.max(v.score, 0.01)};background:${k === top ? "var(--accent)" : i % 2 ? "var(--lilac)" : "var(--silver)"}" title="${k}: ${v.count}"></div>`).join("")}</div>
                 <div><span class="big-accent">${pct((100 * topR.score) / Math.max(total, 1e-9))}</span> from ${top} · ${topR.count} of ${w.n} interventions</div>
                 <div class="stat-sub">${others.length ? `${others.length} other rule${others.length > 1 ? "s" : ""}: ${others.join(", ")}` : "no other rules"}</div>`
                 : '<div class="stat-sub">No rule interventions in this window.</div>'}</div>
               <div><div class="stat-label">Compared with similar clients</div>
-                <div id="peer-strip"></div>
-                <div><span class="big-accent">${ordinal(w.peer_pct[0])} percentile</span> of similar ${esc(c.segment_label)} clients</div>
-                <div class="stat-sub">n = ${w.peer_n} · whisker = weighting range</div></div>
+                <div class="peer-big">${ordinal(w.peer_pct[0])} <span>percentile</span></div>
+                <div class="stat-sub">of ${w.peer_n} similar ${esc(c.segment_label)} clients</div></div>
             </div>
           </section>
           <section class="card">
-            <div class="card-head"><h2>Interventions by rule</h2><span class="card-note">One row per rule, busiest first · each dot is one intervention · hover for action and hold time</span></div>
+            <div class="card-head"><h2>Interventions by rule</h2><span class="card-note">Busiest rule first · hover a dot for details</span></div>
             <div class="lanes" id="lanes"></div>
-            <div class="note-row"><span class="box"></span><span>${incItems.length
-              ? `Incident friction: ${incItems.map((i) => `${i.hours} h inside ${i.id}`).join(", ")} — ${pct(100 * incShare)} of this client's friction this window. Outages are our fault, not a rule's, so they are shown separately and never added to the score.`
-              : "Incident friction: none in this window. Outages are our fault, not a rule's, so they are shown separately and never added to the score."}</span></div>
+            <p class="card-note note-line">${incItems.length
+              ? `Outage: ${incItems.map((i) => `${i.hours} h inside ${i.id}`).join(", ")}, ${pct(100 * incShare)} of this client's friction. Kept separate, never added to the score.`
+              : "No outage friction in this window. Outages are never added to the score."}</p>
           </section>
           <section class="card">
-            <div class="card-head"><h2>Intervention log</h2><span class="card-note">Newest first · only the rule whose decision prevailed is credited</span></div>
+            <div class="card-head"><h2>Intervention log</h2><span class="card-note">Newest first · points add up to the friction score</span></div>
             <div class="table-scroll" id="log"></div>
             <div class="table-tools"><label><input type="checkbox" id="show-uncredited" ${state.showUncredited ? "checked" : ""}> Also show contributing, shadow and overridden hits</label></div>
           </section>
-          <section class="card" id="calc"></section>
+          <details class="card calc" id="calc" ${state.calcOpen ? "open" : ""}></details>
         </div>
         <div class="client-right">
           <section class="card">
@@ -638,44 +605,15 @@
 
     wireCommon();
     document.getElementById("show-uncredited").onchange = (e) => { state.showUncredited = e.target.checked; renderLog(c); };
-    drawGradeScale(document.getElementById("grade-scale"), w);
-    drawPeerStrip(document.getElementById("peer-strip"), c, w);
     drawLanes(document.getElementById("lanes"), c, w);
     renderLog(c);
     renderCalc(document.getElementById("calc"), c, w);
-    document.getElementById("calc-link").onclick = () => document.getElementById("calc").scrollIntoView({ behavior: "smooth", block: "start" });
+    const calc = document.getElementById("calc");
+    calc.addEventListener("toggle", () => { state.calcOpen = calc.open; });
+    document.getElementById("calc-link").onclick = () => { calc.open = true; calc.scrollIntoView({ behavior: "smooth", block: "start" }); };
     if (top) renderWhy(document.getElementById("why-card"), c, w, ruleById[top]);
   }
   const ordinal = (n) => { const v = Math.round(n), s = ["th", "st", "nd", "rd"], r = v % 100; return v + (s[(r - 20) % 10] || s[r] || s[0]); };
-
-  function drawGradeScale(box, w) {
-    const width = 180, H = 34, seg = width / GRADES.length;
-    const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, width, height: H, role: "img", "aria-label": `Grade ${w.grade}, ${w.grade_range.join(" to ")} across weightings` }, box);
-    GRADES.forEach((g, i) => {
-      el("rect", { x: i * seg + 1, y: 14, width: seg - 2, height: 6, fill: gradeColor(g) }, svg);
-      txt(svg, i * seg + seg / 2, 31, g, { "text-anchor": "middle", style: `font-size:10px;${g === w.grade ? "fill:" + gradeColor(g) + ";font-weight:700" : ""}` });
-    });
-    const xi = (g) => GRADES.indexOf(g) * seg + seg / 2;
-    const a = xi(w.grade_range[0]), b = xi(w.grade_range[1]);
-    el("line", { x1: a, x2: b, y1: 7, y2: 7, stroke: "var(--ink)", "stroke-width": 1.5 }, svg);
-    [a, b].forEach((x) => el("line", { x1: x, x2: x, y1: 4, y2: 10, stroke: "var(--ink)", "stroke-width": 1.5 }, svg));
-    el("path", { d: `M${xi(w.grade) - 4},4 h8 l-4,6z`, fill: "var(--ink)" }, svg);
-  }
-
-  function peerKey(c) { return `${c.entity}|${c.segment}|${c.peer_group || ""}`; }
-  function drawPeerStrip(box, c, w) {
-    const peers = clients.filter((p) => peerKey(p) === peerKey(c));
-    const vals = peers.map((p) => p.windows[state.win].score[0]);
-    const max = Math.max(...vals, w.score[2], 1);
-    const width = 260, H = 26, l = 4, r = 10;
-    const xs = (v) => l + (v / max) * (width - l - r);
-    const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, width, height: H, role: "img", "aria-label": "This client's score among similar clients" }, box);
-    el("line", { x1: l, x2: width - r, y1: 14, y2: 14, stroke: "var(--border)" }, svg);
-    peers.forEach((p, i) => { if (p !== c) el("circle", { cx: xs(p.windows[state.win].score[0]), cy: 14 + ((i % 3) - 1) * 4, r: 2.6, fill: "var(--grey-1)" }, svg); });
-    el("line", { x1: xs(w.score[1]), x2: xs(w.score[2]), y1: 14, y2: 14, stroke: "var(--orange)", "stroke-width": 1.5 }, svg);
-    [w.score[1], w.score[2]].forEach((v) => el("line", { x1: xs(v), x2: xs(v), y1: 10, y2: 18, stroke: "var(--orange)", "stroke-width": 1.5 }, svg));
-    el("circle", { cx: xs(w.score[0]), cy: 14, r: 5, fill: "var(--orange)", stroke: "#fff", "stroke-width": 1.5 }, svg);
-  }
 
   function windowHits(c, credited) {
     const start = W().start;
@@ -698,21 +636,22 @@
     lanes.forEach((rid, k) => {
       const y = m.t + laneH * k + laneH / 2;
       const isTop = rid === w.top_rule;
-      if (isTop) el("rect", { x: 0, y: m.t + laneH * k, width, height: laneH, fill: "var(--orange-wash)" }, svg);
+      if (isTop) el("rect", { x: 0, y: m.t + laneH * k, width, height: laneH, fill: "var(--accent-wash)" }, svg);
       el("line", { x1: m.l + pad, x2: width - m.r - pad, y1: y, y2: y, stroke: "var(--border)" }, svg);
-      const label = txt(svg, 8, y + 4, rid, { style: `font-size:12.5px;fill:${isTop ? "var(--orange)" : "var(--ink)"};cursor:pointer` });
+      const label = txt(svg, 8, y + 4, rid, { style: `font-size:12.5px;fill:${isTop ? "var(--accent-ink)" : "var(--ink)"};cursor:pointer` });
       label.addEventListener("click", () => go("#rule/" + rid));
-      txt(svg, width - 10, y + 4, String(counts[rid]), { "text-anchor": "end", class: "t-strong", style: `font-size:12.5px;${isTop ? "fill:var(--orange)" : ""}` });
+      txt(svg, width - 10, y + 4, String(counts[rid]), { "text-anchor": "end", class: "t-strong", style: `font-size:12.5px;${isTop ? "fill:var(--accent-ink)" : ""}` });
       hits.filter((h) => h.r === rid).forEach((h) => {
-        const dot = el("circle", { cx: xs(h.t), cy: y, r: 6, fill: isTop ? "var(--orange)" : "#8e949d", stroke: "#fff", "stroke-width": 1.5 }, svg);
+        const dot = el("circle", { cx: xs(h.t), cy: y, r: 6, fill: isTop ? "var(--accent)" : "var(--silver)", stroke: "#fff", "stroke-width": 1.5 }, svg);
         const hit = el("circle", { cx: xs(h.t), cy: y, r: 11, fill: "transparent" }, svg);
         bindTip(hit, `<b>${dayLabel(h.t)}</b> · ${esc(rid)}<br>${actionLabel(h)} · ${h.c}${h.$ != null ? ` · ${fmtUsd(h.$)}` : ""}<br>Held for ${heldFor(h)} · ${outcomeLabel(h)}<br><span class="t-muted">Adds ${(+h.s).toFixed(1)} points: weight ${h.w}${h.d === "HOLD" ? ` × hold ${h.u}` : ""} × recency ${h.y}</span>`);
         dot.setAttribute("pointer-events", "none");
       });
     });
-    const days = W().days, step = days <= 31 ? 7 : days <= 62 ? 14 : 61;
+    const days = W().days, step = (days <= 31 ? 7 : days <= 62 ? 14 : 61) * (narrow ? 2 : 1);
     for (let d = 0; d <= days; d += step) {
       const iso = new Date(t0 + d * 864e5).toISOString();
+      if (xs(iso) > width - 75) continue;
       txt(svg, xs(iso), H - 8, days > 62 ? `${MONTHS[dt(iso).getUTCMonth()]} ${dt(iso).getUTCFullYear() % 100}` : dayLabel(iso), { "text-anchor": "middle" });
     }
     txt(svg, width - 10, H - 8, `total ${hits.length}`, { "text-anchor": "end" });
@@ -723,12 +662,19 @@
     const hits = windowHits(c, !state.showUncredited).slice().reverse();
     const roleNote = { C: "Not credited · contributing", S: "Not credited · shadow, logged only", O: "Not credited · overridden downstream" };
     const box = document.getElementById("log");
-    box.innerHTML = `<table><thead><tr><th>Date</th><th>Rule</th><th>Action</th><th>Checkpoint</th><th>Held for</th><th>Outcome</th></tr></thead><tbody>
+    box.innerHTML = `<table><thead><tr><th>Date</th><th>Rule</th><th>Action</th><th>Checkpoint</th><th>Held for</th><th>Outcome</th><th class="num">Points ${info("score", "How points are calculated")}</th></tr></thead><tbody>
       ${hits.map((h) => `<tr class="${h.a === "P" ? "" : "uncredited"}"><td>${dayLabel(h.t)}</td>
         <td class="rule-cell${h.r === w.top_rule && h.a === "P" ? " top" : ""}"><span data-tip-rule="${h.r}">${h.r}</span></td>
         <td>${h.a === "P" ? actionLabel(h) : roleNote[h.a]}</td><td>${h.c}</td><td>${h.a === "P" ? heldFor(h) : "—"}</td>
-        <td>${h.a === "P" ? outcomeLabel(h) : "—"}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">No interventions in this window.</td></tr>'}
+        <td>${h.a === "P" ? outcomeLabel(h) : "—"}</td>
+        <td class="num">${h.a === "P" ? `<span class="pts" data-pts="${h.w}|${h.d === "HOLD" ? h.u : 1}|${h.y}|${heldFor(h)}">${(+h.s).toFixed(1)}</span>` : "0"}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">No interventions in this window.</td></tr>'}
+      ${hits.length ? `<tr class="calc-total"><td colspan="6">Friction score</td><td class="num">${w.score[0].toFixed(1)}</td></tr>` : ""}
       </tbody></table>`;
+    wireInfo(box);
+    box.querySelectorAll("[data-pts]").forEach((sp) => {
+      const [wt, hf, rec, held] = sp.dataset.pts.split("|");
+      bindTip(sp, `<b>${sp.textContent} points</b> = weight ${wt}${hf !== "1" ? ` × hold-time ${(+hf).toFixed(2)} <span class="t-muted">(${held})</span>` : ""} × recency ${(+rec).toFixed(2)}`);
+    });
     box.querySelectorAll("[data-tip-rule]").forEach((s) => {
       const r = ruleById[s.dataset.tipRule];
       bindTip(s, `<b>${r.rule_id}</b><br>${esc(r.description)}<br><span class="t-muted">${r.decision_label} · ${r.checkpoint} · live since ${fullDate(r.live_since + "T00:00:00Z")}</span>`);
@@ -736,44 +682,32 @@
   }
 
   function renderCalc(card, c, w) {
-    const hits = windowHits(c, true).slice().reverse();
     const all = windowHits(c, false);
     const contrib = all.filter((h) => h.a === "C").length, over = all.filter((h) => h.a === "O").length;
     const shadow = all.filter((h) => h.a === "S"), shadowRules = [...new Set(shadow.map((h) => h.r))];
     const total = w.score[0];
     const ref = D.config.reference_hours, hl = D.config.half_life_days;
     const [lo, hi] = D.grades.cutoffs[w.grade];
-    const asOf = Date.parse(D.meta.as_of);
     const hf = (h) => Math.log1p(h / ref).toFixed(1);
     const weights = Object.entries(WT).filter(([k, v]) => v > 0).map(([k, v]) => `${k.charAt(0) + k.slice(1).toLowerCase().replace("_", " ")} ${v}`).join(" · ");
     const inc = w.incident;
-    card.innerHTML = `<div class="card-head"><h2>How ${esc(shortName(c))}'s score of ${Math.round(total)} is calculated</h2>
-        <span class="card-note">Placeholder weights ${D.meta.weights_version} · ${glanceTitle().toLowerCase()}</span></div>
+    card.innerHTML = `<summary><h2>How ${esc(shortName(c))}'s score of ${Math.round(total)} is calculated</h2><span class="card-note">Each row of the log above, added up</span></summary>
       <div class="formula">
-        <div class="term"><div class="t-name">Decision weight</div><div class="t-desc">${weights}. Ordered by how much each burdens the client.</div></div>
+        <div class="term"><div class="t-name">Decision weight</div><div class="t-desc">${weights}</div></div>
         <span class="op" aria-hidden="true">×</span>
-        <div class="term"><div class="t-name">Hold-time factor</div><div class="t-desc">Holds only: ln(1 + hours held ÷ ${ref}). 25 min ≈ ${hf(25 / 60)} · 18 h ≈ ${hf(18)} · 4 days ≈ ${hf(96)}. Everything else counts 1.</div></div>
+        <div class="term"><div class="t-name">Hold-time factor</div><div class="t-desc">Holds only: ln(1 + hours ÷ ${ref}). 25 min ≈ ${hf(25 / 60)}, 18 h ≈ ${hf(18)}, 4 days ≈ ${hf(96)}</div></div>
         <span class="op" aria-hidden="true">×</span>
-        <div class="term"><div class="t-name">Recency</div><div class="t-desc">0.5 ^ (days ago ÷ ${hl}). Yesterday ≈ 1, ${hl} days ago 0.5.</div></div>
+        <div class="term"><div class="t-name">Recency</div><div class="t-desc">0.5 ^ (days ago ÷ ${hl}): today 1, ${hl} days ago 0.5</div></div>
         <span class="op" aria-hidden="true">=</span>
-        <div class="term result"><div class="t-name">Points</div><div class="t-desc">Added up over every intervention where this rule's decision prevailed.</div></div>
+        <div class="term result"><div class="t-name">Points</div><div class="t-desc">${Math.round(total)} in total → grade <b>${w.grade}</b> (${lo}${hi == null ? "+" : `–${hi}`})</div></div>
       </div>
-      ${hits.length ? `<div class="table-scroll"><table class="calc-table"><thead><tr><th>Date</th><th>Rule</th><th>Action</th>
-        <th class="num">Weight</th><th class="num">Hold-time factor</th><th class="num">Recency</th><th class="num">Points</th></tr></thead><tbody>
-        ${hits.map((h) => `<tr><td>${dayLabel(h.t)}</td><td class="${h.r === w.top_rule ? "accent" : ""}">${h.r}</td><td>${actionLabel(h)}</td>
-          <td class="num">${h.w}</td><td class="num">${h.d === "HOLD" ? `${h.u.toFixed(2)} <span class="muted">(${heldFor(h)})</span>` : "1"}</td>
-          <td class="num">${h.y.toFixed(2)} <span class="muted">(${Math.round((asOf - Date.parse(h.t)) / 864e5)} d ago)</span></td>
-          <td class="num"><b>${h.s.toFixed(1)}</b></td></tr>`).join("")}
-        <tr class="calc-total"><td colspan="6">Friction score <span class="muted" style="font-weight:400">(rows are rounded)</span></td><td class="num">${total.toFixed(1)}</td></tr></tbody></table></div>
-        <p class="calc-note">${Math.round(total)} points falls in grade <b style="color:${gradeColor(w.grade)}">${w.grade}</b> (${lo}${hi == null ? "+" : `–${hi}`}). Grade cutoffs are placeholders.</p>`
-        : `<p class="calc-note">No interventions in this window, so the score is 0.</p>`}
       <div class="calc-cols">
         <div><div class="stat-label">Counted as zero</div><ul class="calc-list">
-          ${contrib ? `<li>${contrib} contributing hit${contrib === 1 ? "" : "s"}: another rule's decision prevailed on the same event, so only that rule is credited</li>` : ""}
-          ${shadow.length ? `<li>${shadow.length} shadow hit${shadow.length === 1 ? "" : "s"} from ${shadowRules.join(", ")}: logged, but no client paid for them</li>` : ""}
-          ${over ? `<li>${over} hit${over === 1 ? "" : "s"} overridden downstream: the rule fired, nothing happened to the client</li>` : ""}
-          <li>Outage friction: ${inc.items.length ? `${inc.friction.toFixed(0)} points from ${inc.items.map((i) => `${i.id} (${i.hours} h)`).join(", ")}, kept in its own band because no rule caused it` : "none in this window; outages are never added to the score"}</li></ul></div>
-        <div><div class="stat-label">Why a range</div><p class="calc-note" style="margin:0">The weights are placeholders, so the score is re-run under ${NW} weightings that keep the same ordering (deny above hold above settlement limit), with half-lives of ${D.config.weighting_sweep.half_life_days.join("–")} days and different hold-time shapes. ${esc(shortName(c))}'s score runs ${Math.round(w.score[1])}–${Math.round(w.score[2])}, grades ${w.grade_range.join("–")}. The grade shown uses the placeholder weights.</p></div>
+          ${contrib ? `<li>${contrib} contributing hit${contrib === 1 ? "" : "s"}: another rule's decision prevailed on the same event</li>` : ""}
+          ${shadow.length ? `<li>${shadow.length} shadow hit${shadow.length === 1 ? "" : "s"} from ${shadowRules.join(", ")}: logged, no client paid</li>` : ""}
+          ${over ? `<li>${over} hit${over === 1 ? "" : "s"} overridden downstream</li>` : ""}
+          <li>Outages: ${inc.items.length ? `${inc.friction.toFixed(0)} points from ${inc.items.map((i) => i.id).join(", ")}, kept in their own band` : "none in this window"}</li></ul></div>
+        <div><div class="stat-label">Why a range</div><p class="calc-note">The weights are placeholders (${D.meta.weights_version}). Re-run under ${NW} weightings that keep the same order, half-lives of ${D.config.weighting_sweep.half_life_days.join("–")} days and other hold-time shapes, the score runs ${Math.round(w.score[1])}–${Math.round(w.score[2])} (grades ${w.grade_range.join("–")}).</p></div>
       </div>`;
   }
 
@@ -840,15 +774,15 @@
       if (nb.x < m.l) nf.setAttribute("x", (a + b) / 2 + (m.l - nb.x));
       txt(svg, xs(up ? hi : lo) + (up ? -2 : 2), m.t - 6, "confirmed fraud", { "text-anchor": up ? "end" : "start" });
     }
-    el("line", { x1: xs(today), x2: xs(today), y1: m.t - 2, y2: H - m.b, stroke: "var(--red)", "stroke-width": 2 }, svg);
+    el("line", { x1: xs(today), x2: xs(today), y1: m.t - 2, y2: H - m.b, stroke: "var(--drama)", "stroke-width": 2 }, svg);
     if (proposed != null) el("line", { x1: xs(proposed), x2: xs(proposed), y1: m.t, y2: H - m.b, stroke: "var(--ink)", "stroke-width": 1.5, "stroke-dasharray": "2 3" }, svg);
     el("line", { x1: m.l, x2: width - m.r, y1: H - m.b, y2: H - m.b, class: "axis" }, svg);
     // fraud diamonds (a sample, spread so they read as a cluster)
     const fs = fraud.length > 24 ? fraud.filter((_, i) => i % Math.ceil(fraud.length / 24) === 0) : fraud;
-    fs.forEach((v, i) => { const x = xs(v), y = yMid + ((i % 3) - 1) * 9; el("path", { d: `M${x},${y - 4.5} l4.5,4.5 l-4.5,4.5 l-4.5,-4.5z`, fill: "#3a3d44" }, svg); });
+    fs.forEach((v, i) => { const x = xs(v), y = yMid + ((i % 3) - 1) * 9; el("path", { d: `M${x},${y - 4.5} l4.5,4.5 l-4.5,4.5 l-4.5,-4.5z`, fill: "var(--drama)" }, svg); });
     vals.forEach((v, i) => {
       const x = xs(v), y = yMid + ((i % 3) - 1) * 9;
-      el("circle", fires(v) ? { cx: x, cy: y, r: 4.5, fill: "var(--orange)" } : { cx: x, cy: y, r: 3.8, fill: "#fff", stroke: "var(--orange)", "stroke-width": 1.5 }, svg);
+      el("circle", fires(v) ? { cx: x, cy: y, r: 4.5, fill: "var(--accent)" } : { cx: x, cy: y, r: 3.8, fill: "#fff", stroke: "var(--accent)", "stroke-width": 1.5 }, svg);
     });
     // axis labels: today and proposed first, the range ends only where they fit
     const taken = [];
@@ -859,7 +793,7 @@
       if (!y) taken.push([b.x, b.x + b.width]);
       return true;
     };
-    lab(today, `${fmtVal(today, r.unit, true)} today`, { style: "fill:var(--red)" });
+    lab(today, `${fmtVal(today, r.unit, true)} today`, { style: "fill:var(--drama)" });
     if (proposed != null && !lab(proposed, `${fmtVal(proposed, r.unit, true)} proposed`, { class: "t-strong" }))
       lab(proposed, `${fmtVal(proposed, r.unit, true)} proposed`, { class: "t-strong", "text-anchor": "start", x: xs(proposed) + 4 }, m.t + 10);
     lab(lo, fmtVal(lo, r.unit, true), { "text-anchor": "start" });
@@ -898,28 +832,33 @@
         <section class="card rule-list">
           <div class="card-head"><div><h2>Rules</h2><div class="card-sub">Sorted by interventions caused, ${W().phrase}</div></div></div>
           ${list.map((x) => `<button class="rule-item" data-rule="${x.rule_id}" aria-current="${x.rule_id === r.rule_id}">
-              <span><div class="rid">${x.rule_id}</div><div class="rcount">${fmtInt(x.windows[state.win].interventions)} interventions</div></span>
-              <span class="tag ${tagFor(x.windows[state.win].curve)}">${esc(x.windows[state.win].curve.label)}</span></button>`).join("")}
+              <span class="rid">${x.rule_id}</span>
+              <span class="rmeta"><span class="rcount">${fmtInt(x.windows[state.win].interventions)} interventions</span>
+              <span class="tag ${tagFor(x.windows[state.win].curve)}">${esc(x.windows[state.win].curve.label)}</span></span></button>`).join("")}
           <div class="foot">"Free" = threshold can be relaxed this far without missing any fraud the rule catches today.</div>
         </section>
         <div class="rule-mid">
         <section class="card">
           <div class="card-head"><h2>What each threshold buys and costs</h2>
-            <div class="legend"><span><i style="background:var(--teal);height:8px;opacity:.6"></i>Friction removed</span><span><i style="background:var(--ink)"></i>Fraud still caught</span></div></div>
+            <div class="legend"><span><i style="background:var(--accent);height:8px;opacity:.55"></i>Friction removed ${info("removed")}</span><span><i style="background:var(--drama)"></i>Fraud still caught</span></div></div>
           <div class="chart-box" id="curve"></div>
           <div class="slider-row">
             <div class="threshold-line"><strong>Threshold</strong>
               <input class="threshold-input" id="threshold-input" aria-label="Threshold value" ${r.sweepable === false ? "disabled" : ""}>
-              <span class="muted">today: ${fmtVal(r.grid[0], r.unit)} · drag, or type ${r.unit === "usd" ? "an amount" : "a value"}</span></div>
+              <span class="muted">today: ${fmtVal(r.grid[0], r.unit)} · drag, or type ${r.unit === "usd" ? "an amount" : "a value"}</span>
+              ${state.policy === "segment" ? `<span class="tag tag-free">Applied to established, high-friction clients only</span>` : ""}</div>
             <div class="slider" id="slider" role="slider" tabindex="0" aria-label="Threshold"></div>
           </div>
-          <p class="chart-caption">Shaded band around the blue line = range across ${NW} ordering-consistent friction weightings. Fraud caught does not depend on weights.</p>
+        </section>
+        <details class="card more" ${state.detailsOpen ? "open" : ""} id="more">
+          <summary><h2>Details</h2><span class="card-note">Full dollar ledger, who the change applies to, method</span></summary>
           <div class="policy"><span>Apply the new threshold to</span>
             <div class="seg" role="group" aria-label="Apply to">
               <button type="button" data-policy="global" aria-pressed="${state.policy === "global"}">All clients</button>
               <button type="button" data-policy="segment" aria-pressed="${state.policy === "segment"}">Established clients above the ${ordinal(D.config.high_friction_percentile)} percentile</button></div></div>
-        </section>
-        <section class="card" id="dollars"></section>
+          <div id="dollars"></div>
+          <p class="chart-caption">The shaded band is the range across ${NW} ordering-consistent friction weightings. Fraud caught does not depend on weights.</p>
+        </details>
         </div>
         <div class="rule-right" style="display:grid;gap:16px;min-width:0">
           <section class="card" id="compare"></section>
@@ -930,6 +869,8 @@
 
     wireCommon();
     view.querySelectorAll("[data-policy]").forEach((b) => (b.onclick = () => { state.policy = b.dataset.policy; renderRule(); }));
+    const more = document.getElementById("more");
+    more.addEventListener("toggle", () => { state.detailsOpen = more.open; });
     const input = document.getElementById("threshold-input");
     input.addEventListener("change", () => {
       const raw = parseFloat(input.value.replace(/[^0-9.\-]/g, ""));
@@ -981,22 +922,22 @@
       txt(svg, fx0, m.t + ih - 16, `all the way to ${fmtVal(r.grid[fl], r.unit)}`, { class: "t-ink", "text-anchor": anchor });
     }
     if (fl > 0 && fl < n - 1 && cv.base_fraud_caught_rule > 0) {
-      el("line", { x1: xs(fl), x2: xs(fl), y1: m.t, y2: m.t + ih, stroke: "var(--ink-2)", "stroke-dasharray": "3 3" }, svg);
+      el("line", { x1: xs(fl), x2: xs(fl), y1: m.t, y2: m.t + ih, stroke: "var(--accent-ink)", "stroke-dasharray": "3 3" }, svg);
       if (iw - (xs(fl) - m.l) > 120) {
         txt(svg, xs(fl) + 8, ys(24), `Past ${fmtVal(r.grid[fl], r.unit)},`, {});
         txt(svg, xs(fl) + 8, ys(24) + 14, "fraud starts", {});
         txt(svg, xs(fl) + 8, ys(24) + 28, "slipping through", {});
       }
     }
-    txt(svg, xs(0) + 4, m.t - 10, "Today", { style: "fill:var(--red);font-weight:600" });
+    txt(svg, xs(0) + 4, m.t - 10, "Today", { style: "fill:var(--drama);font-weight:600" });
 
     const band = pts.map((p, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(p.pct[2]).toFixed(1)}`).join("")
       + pts.slice().reverse().map((p, j) => `L${xs(n - 1 - j).toFixed(1)},${ys(p.pct[1]).toFixed(1)}`).join("") + "Z";
-    el("path", { d: band, fill: "var(--teal-band)" }, svg);
-    el("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(p.pct[0]).toFixed(1)}`).join(""), fill: "none", stroke: "var(--teal)", "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+    el("path", { d: band, fill: "var(--accent-band)" }, svg);
+    el("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(p.pct[0]).toFixed(1)}`).join(""), fill: "none", stroke: "var(--accent)", "stroke-width": 2.5, "stroke-linejoin": "round" }, svg);
     const base = cv.base_fraud_caught_rule;
     const fraudPct = pts.map((p) => (base ? (100 * p.fraud_caught_rule) / base : 100));
-    if (base) el("path", { d: fraudPct.map((v, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(v).toFixed(1)}`).join(""), fill: "none", stroke: "var(--ink)", "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+    if (base) el("path", { d: fraudPct.map((v, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(v).toFixed(1)}`).join(""), fill: "none", stroke: "var(--drama)", "stroke-width": 2, "stroke-linejoin": "round" }, svg);
 
     const marker = el("g", { "pointer-events": "none" }, svg);
     curveGeo = { svg, marker, xs, ys, m, ih, iw, width, fraudPct, pts, base, xv, shown };
@@ -1061,16 +1002,16 @@
       let bx = Math.min(Math.max(cx - w / 2, g.m.l), g.m.l + g.iw - w);
       if (!above && cy + 30 > g.m.t + g.ih) above = true;
       const by = above ? cy - 26 : cy + 8;
-      t.setAttribute("x", bx + 6); t.setAttribute("y", by + 13);
-      const rect = el("rect", { x: bx, y: by, width: w, height: 18, fill: "#fff", stroke: color || "var(--ink)" });
+      t.setAttribute("x", bx + 6); t.setAttribute("y", by + 14);
+      const rect = el("rect", { x: bx, y: by, width: w, height: 20, rx: 10, fill: "var(--surface)", stroke: color || "var(--drama)" });
       g.marker.insertBefore(rect, t);
     };
     if (base) {
-      el("circle", { cx: x, cy: g.ys(g.fraudPct[i]), r: 5, fill: "#fff", stroke: "var(--ink)", "stroke-width": 2 }, g.marker);
+      el("circle", { cx: x, cy: g.ys(g.fraudPct[i]), r: 5, fill: "var(--surface)", stroke: "var(--drama)", "stroke-width": 2 }, g.marker);
       callout(x, g.ys(g.fraudPct[i]), `${pct(g.fraudPct[i])} caught`, null, true);
     }
-    el("circle", { cx: x, cy: g.ys(p.pct[0]), r: 4.5, fill: "#fff", stroke: "var(--teal)", "stroke-width": 2 }, g.marker);
-    if (i > 0) callout(x, g.ys(p.pct[0]), `${pct(p.pct[0])} removed`, "var(--teal)", false);
+    el("circle", { cx: x, cy: g.ys(p.pct[0]), r: 5, fill: "var(--surface)", stroke: "var(--accent)", "stroke-width": 2.5 }, g.marker);
+    if (i > 0) callout(x, g.ys(p.pct[0]), `${pct(p.pct[0])} removed`, "var(--accent-ink)", false);
     // slider
     const s = g.slider;
     s.thumb.style.left = x * s.scale + "px";
@@ -1094,17 +1035,19 @@
     }
     const ex = rw.example;
     const cmp = document.getElementById("compare");
+    const freedUsd = p.freed ? p.freed.usd : 0;
     cmp.innerHTML = `<div class="card-head"><h2>At ${fmtVal(T, r.unit)}, compared with today</h2><span class="card-note">${periodNote()}</span></div>
-      <div class="compare-panel"><div class="label">Friction removed ${info("removed")}</div>
-        <div class="value link-blue">${fmtInt(p.interventions_removed)} fewer intervention${p.interventions_removed === 1 ? "" : "s"}</div>
-        <div class="sub">${pct(p.pct[0])} of what this rule causes today (range ${pct(p.pct[1])}–${pct(p.pct[2])})</div>
-        ${p.freed && p.freed.usd ? `<div class="sub">${fmtUsd(p.freed.usd)} of payouts no longer held or denied · ${fmtInt(p.freed.review_hours)} review hours</div>` : ""}</div>
-      <div class="compare-panel"><div class="label">Clients no longer interrupted</div>
-        <div class="value">${fmtInt(p.clients_affected)} client${p.clients_affected === 1 ? "" : "s"}</div>
-        <div class="sub">${p.established_clients_affected} of them in the Established band</div></div>
-      <div class="compare-panel"><div class="label">Fraud still caught</div>
-        <div class="value">${base ? `${p.fraud_caught_rule} of ${base} cases` : "No fraud caught today"}</div>
-        <div class="sub">${!base ? "This rule caught no fraud in this window" : lost <= 0 ? "Every fraud case this rule catches today, it still catches" : `Misses ${lost} case${lost > 1 ? "s" : ""} this rule catches today`}</div></div>
+      <div class="big-stats">
+        <div class="big-stat"><div class="value">${fmtInt(p.interventions_removed)}</div>
+          <div class="label">fewer interventions, ${fmtInt(p.clients_affected)} clients no longer interrupted</div>
+          <div class="sub">${pct(p.pct[0])} of this rule's friction (range ${pct(p.pct[1])}–${pct(p.pct[2])})</div></div>
+        ${freedUsd ? `<div class="big-stat"><div class="value">${fmtUsd(freedUsd)}</div>
+          <div class="label">of payouts no longer held or denied</div>
+          <div class="sub">${fmtInt(p.freed.wait_days)} client-days of waiting · ${fmtInt(p.freed.review_hours)} review hours</div></div>` : ""}
+        <div class="big-stat ${lost > 0 ? "bad" : "good"}"><div class="value">${base ? `${p.fraud_caught_rule} of ${base}` : "—"}</div>
+          <div class="label">fraud cases still caught</div>
+          <div class="sub">${!base ? "This rule caught no fraud in this window" : lost <= 0 ? "Everything it catches today, it still catches" : `Misses ${lost} it catches today`}</div></div>
+      </div>
       <p class="statement">${esc(statement)}</p>
       ${ex && i > 0 ? `<p class="example">Example: <a href="#client/${ex.client_id}">${esc(ex.name)}</a> goes from ${ex.baseline} intervention${ex.baseline === 1 ? "" : "s"} to ${pts === cv.points ? p.example_interventions : cv.points[i].example_interventions}</p>` : ""}`;
 
@@ -1141,7 +1084,7 @@
   function renderDollars(r, i, pts) {
     const card = document.getElementById("dollars");
     const a = pts[0], b = pts[i], A = a.ledger, B = b.ledger;
-    if (!A) { card.hidden = true; return; }
+    if (!A) { card.innerHTML = ""; return; }
     const T = r.grid[i];
     const sign = (v, f) => (Math.abs(v) < 0.5 ? "no change" : (v > 0 ? "+" : "−") + f(Math.abs(v)));
     const rows = [];
@@ -1161,9 +1104,7 @@
       const la = A.denied_usd + A.held_usd, lb = B.denied_usd + B.held_usd;
       if (la && a.fraud_usd_rule) rows.push(`<tr><td>Legitimate dollars held or denied per fraud dollar stopped</td><td class="num">$${(la / a.fraud_usd_rule).toFixed(2)}</td><td class="num">${b.fraud_usd_rule ? "$" + (lb / b.fraud_usd_rule).toFixed(2) : "—"}</td><td class="num delta"></td></tr>`);
     }
-    card.hidden = false;
-    card.innerHTML = `<div class="card-head"><h2>Counting in dollars ${info("ledger")}</h2><span class="card-note">${r.rule_id} · ${W().phrase}</span></div>
-      <div class="card-sub">What this rule costs legitimate clients, next to what it catches</div>
+    card.innerHTML = `<h3 class="sub-h">Counting in dollars ${info("ledger")} <span class="card-note">this rule's own interventions, ${W().phrase}</span></h3>
       <div class="table-scroll"><table class="dollars"><thead><tr><th></th><th class="num">Today (${fmtVal(r.grid[0], r.unit)})</th><th class="num">At ${fmtVal(T, r.unit)}</th><th class="num">Change</th></tr></thead>
       <tbody>${rows.join("")}</tbody></table></div>
       <p class="card-note" style="margin-top:8px">Legitimate = never confirmed as fraud. Dollars are the payout amounts denied or held.${b.interventions_reattributed ? ` ${fmtInt(b.interventions_reattributed)} interventions move to another rule when this one stops firing, so the portfolio saves ${fmtInt(b.interventions_removed)}.` : ""}</p>`;
