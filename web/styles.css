@@ -23,7 +23,6 @@
   --border: #e5e1ec;
   --border-strong: #c9c5cf;
   --free-wash: #f3effd;
-  --heavy-wash: rgba(209, 200, 231, 0.5);
   --radius: 16px;
   --font: "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -150,8 +149,45 @@ main { max-width: 1440px; margin: 0 auto; padding: 12px 32px 32px; outline: none
 .home-grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; align-items: start; margin-bottom: 16px; }
 .chart-box { position: relative; margin-top: 12px; }
 .chart-box svg { display: block; width: 100%; height: auto; overflow: visible; }
-.grade-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
-.grade-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+/* who carries the friction: the count grid */
+.grid-table { border-collapse: separate; border-spacing: 4px; margin: 6px -4px 0; width: calc(100% + 8px); table-layout: fixed; min-width: 520px; }
+.grid-table col.g-row { width: 150px; }
+.grid-table col.g-tot { width: 120px; }
+.grid-table th, .grid-table td { border-bottom: 0; text-align: center; padding: 6px 8px; }
+.grid-table thead th { color: var(--muted); font-size: 11.5px; }
+.grid-table th[scope="row"], .grid-table thead th:first-child { text-align: left; white-space: nowrap; }
+.grid-table td.gcell { padding: 0; height: 46px; border-radius: 10px; }
+.grid-table td.gcell.focus { box-shadow: inset 0 0 0 2px var(--accent-ink); }
+.grid-table tfoot th, .grid-table tfoot td { border-top: 1px solid var(--border); color: var(--ink-2); }
+.cell-btn { display: block; width: 100%; height: 100%; min-height: 46px; background: none; border: 0; border-radius: 10px;
+  cursor: pointer; font-size: 15px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.cell-btn:hover { box-shadow: inset 0 0 0 2px var(--accent); }
+.cell-btn.active { box-shadow: inset 0 0 0 3px var(--ink); }
+.gtot { white-space: nowrap; }
+.gtot .cell-btn { display: inline; width: auto; height: auto; min-height: 0; padding: 2px 4px; font-size: 13px; color: var(--accent-ink);
+  text-decoration: underline dotted; text-underline-offset: 3px; }
+.gtot .cell-btn:hover { box-shadow: none; text-decoration-style: solid; }
+.gtot .cell-btn.active { box-shadow: none; background: var(--accent-wash); }
+.grade-badge.sm { display: inline-grid; width: 22px; height: 22px; border-radius: 7px; font-size: 11.5px; vertical-align: middle; }
+.gnote { font-size: 11px; color: var(--muted); margin-left: 8px; font-weight: 400; }
+.grid-key { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
+.key-box { width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 2px var(--accent-ink); flex: none; }
+
+/* the client list behind a grid number: a panel in the corner */
+.cell-panel { position: fixed; right: 24px; bottom: 24px; z-index: 20; width: min(800px, calc(100vw - 32px));
+  max-height: min(70vh, 620px); display: flex; flex-direction: column; background: var(--surface); border-radius: 16px;
+  border: 1px solid var(--border); box-shadow: 0 18px 50px rgba(34, 30, 40, .22); }
+.cp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 18px 10px;
+  border-bottom: 1px solid var(--border); }
+.cp-head h3 { margin: 0; font-size: 15px; outline: none; }
+.cp-close { flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--surface-2); font-size: 18px;
+  line-height: 1; cursor: pointer; color: var(--ink-2); }
+.cp-close:hover { background: var(--accent-wash); color: var(--accent-ink); }
+.cp-body { overflow: auto; padding: 0 18px 12px; }
+.cp-table th { position: sticky; top: 0; background: var(--surface); z-index: 1; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.cp-table td a { font-weight: 600; }
+th.c, td.c { text-align: center; font-variant-numeric: tabular-nums; }
 .look-list { margin-top: 10px; }
 .look-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto auto; gap: 12px; align-items: center;
   padding: 10px 0; border-bottom: 1px solid var(--border); }
@@ -170,9 +206,11 @@ th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .rule-table .rname { background: none; border: 0; padding: 0; cursor: pointer; color: var(--ink); font-weight: 600; text-align: left; }
 .rule-table .rname:hover { text-decoration: underline; }
 .rule-table .rname.top { color: var(--accent-ink); }
-.inline-bar { display: flex; align-items: center; gap: 10px; min-width: 180px; }
-.inline-bar span { height: 8px; border-radius: 999px; background: var(--lilac); }
-.inline-bar span.top { background: var(--accent); }
+.inline-bar { display: inline-flex; align-items: center; gap: 10px; }
+.inline-bar .track { display: block; width: 150px; }
+.inline-bar .track span { display: block; height: 8px; border-radius: 999px; background: var(--lilac); }
+.inline-bar .track span.top { background: var(--accent); }
+.inline-bar b { min-width: 3ch; text-align: left; }
 .inline-bar b { font-weight: 600; }
 .hl-cell { background: var(--accent-wash); color: var(--accent-ink); font-weight: 700; padding: 2px 8px; border-radius: 999px; }
 
@@ -325,5 +363,19 @@ svg .axis { stroke: var(--border-strong); stroke-width: 1; }
   h1 { font-size: 22px; }
   .window { text-align: left; }
   .search-pop { position: fixed; left: 16px; right: 16px; top: 60px; width: auto; }
-  .inline-bar { min-width: 120px; }
+  .inline-bar .track { width: 80px; }
+  .cell-panel { right: 8px; left: 8px; bottom: 8px; width: auto; max-height: 75vh; }
+  .grid-table { min-width: 0; border-spacing: 3px; }
+  .grid-table col.g-tot { width: 58px; }
+  .grid-table th, .grid-table td { padding: 6px 2px; }
+  .grid-table thead th, .grid-table thead th:first-child, .grid-table tfoot th { white-space: normal; font-size: 10px; line-height: 1.25; letter-spacing: -0.1px; }
+  .grid-table col.g-row { width: 46px; }
+  .gtot .muted { display: block; font-size: 10.5px; }
+  .grid-table thead th:first-child .info { display: none; }
+  .gnote { display: none; }
+  .cp-table thead { display: none; }
+  .cp-table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .cp-table td { border: 0; padding: 0; text-align: left; }
+  .cp-table td:first-child, .cp-table td:last-child { grid-column: 1 / -1; }
+  .cp-table td[data-label]::before { content: attr(data-label); display: block; font-size: 10.5px; color: var(--muted); }
 }

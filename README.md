@@ -46,7 +46,7 @@ sits behind a disclosure (**Details**, **How it's calculated**, **Method and suc
 
 | Screen | Answers | What's on it |
 |---|---|---|
-| **Home** (portfolio) | How big is this, and where do I look first? | Four headline numbers with the change against the previous window (interventions, payouts held or denied, good clients with heavy friction, friction safe to remove), and beneath them two fraud metrics, **fraud saved** and **fraud loss**; one key finding, the 12-month trend and the rule behind it; every client plotted by friction score against good-client band, with the "good clients, heavy friction" quadrant shaded and the A–F counts as its legend; good clients to look at first; one table of the rules causing the most friction (interventions, fraud cases caught, their ratio, payouts held or denied, room to relax), with the highest ratio and the costliest rule highlighted |
+| **Home** (portfolio) | How big is this, and where do I look first? | Four headline numbers with the change against the previous window (interventions, payouts held or denied, good clients with heavy friction, friction safe to remove), and beneath them two fraud metrics, **fraud saved** and **fraud loss**; one key finding, the 12-month trend and the rule behind it; a count grid of clients by friction grade (A–F rows, with each grade's total and share) and good-client band (columns), with the established E and F cells outlined. Click any number for a list of those clients in the corner: transactions, transaction value, interventions and the rule causing most; good clients to look at first; one table of the rules causing the most friction (interventions, fraud cases caught, their ratio, payouts held or denied, room to relax), with the highest ratio and the costliest rule highlighted |
 | **Client friction detail** | Is this good client being over-challenged, and by which rule? | One-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); time waiting on their money; payouts denied; share from the top rule; percentile among similar clients; one timeline lane per rule; intervention log with the points each intervention adds and the total; good-client evidence; "why this rule keeps firing" plot; how the score is calculated, collapsed until asked for |
 | **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Rule list with room-to-relax tags; the curve (friction removed as a band across weightings, fraud still caught as a line, the safe range shaded and named); a threshold slider aligned under the x-axis (or type a value); three numbers against today (interventions removed, payouts no longer held or denied, fraud still caught); the plain-language sentence; a shadow-test proposal you can draft and copy. **Details** holds the full dollar ledger, the option to apply the change only to established high-friction clients, and the method |
 
@@ -97,8 +97,9 @@ On seed 4127:
 
 ## The demo (under three minutes)
 
-1. **Home.** The shaded "start here" quadrant holds good clients carrying heavy friction. Acme
-   Supplies is labelled in it.
+1. **Home.** In "Who carries the friction", the two outlined cells hold the 12 established
+   clients graded E or F: good clients carrying heavy friction. Click the 5 in the E row. Acme
+   Supplies is in the list: 22 transactions, 9 interventions, 7 of them from `payout_limit_100`.
 2. **Click Acme Supplies.** It has 9 interventions in the last 30 days, 7 of them from
    `payout_limit_100`, and it has never had a confirmed fraud case. That rule went live on Aug 28,
    which is why Acme went from 3 interventions in August to 9 this month. Acme's normal payout is

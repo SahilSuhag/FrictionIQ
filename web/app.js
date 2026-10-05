@@ -150,6 +150,7 @@
     review: () => `<b>Ops review time</b><br>Every hold becomes a manual review. This assumes 30 minutes each; the PRD's taxonomy puts it at 20–40.`,
     removed: () => `<b>Friction removed</b><br>The fall in friction score, summed over every client, as a share of what this rule causes today. It is a band because the weights are placeholders: ${NW} weightings with the same ordering were tried.`,
     perfraud: () => `<b>Ratio: interventions per fraud case</b><br>The rule's interventions divided by the fraud cases it caught. 20 : 1 means it intervened 20 times for each fraud case it caught, so most of its interventions landed on good clients. The higher the ratio, the more room there may be to tune the rule. Its <i>Room to relax</i> tag says whether it can be loosened without missing fraud.`,
+    txn: () => `<b>Transactions</b><br>The money movements the rules screened in this window: card payments captured, settlements and payouts, with their total value. Boarding checks are not transactions.`,
     fraudcases: () => `<b>Fraud cases caught</b><br>Confirmed fraud cases this rule fired on. One case can trip more than one rule, so this column adds up to more than the fraud saved total.`,
     saved: () => `<b>Fraud saved</b><br>Confirmed fraud that a live rule denied or held before the money left, in payout dollars, across every client. Cases with no payout amount, such as boarding fraud, count as cases but add no dollars.`,
     lost: () => `<b>Fraud loss</b><br>Confirmed fraud that no live rule stopped, in payout dollars, across every client. Fraud saved and fraud loss together make up all confirmed fraud in the window.`,
@@ -199,6 +200,7 @@
       if (arg && ruleById[arg] && arg !== state.ruleId) { state.ruleId = arg; state.proposalOpen = false; }
       state.view = "rule";
     } else state.view = "home";
+    if (state.view !== "home") state.cell = null;
     render();
     view.focus({ preventScroll: true });
     window.scrollTo(0, 0);
@@ -280,14 +282,7 @@
       </div>
       ${bannerSection()}
       <div class="home-grid">
-        <section class="card">
-          <div class="card-head"><h2>Who carries the friction</h2></div>
-          <div class="card-sub">Each dot is a client: its row is its friction grade, its column how much good-client history it has.</div>
-          <div class="chart-box" id="scatter"></div>
-          <div class="grade-legend"><span><i style="background:var(--accent)"></i>Established clients graded ${HEAVY.join(" or ")} (${fmtInt(P.good_clients_heavy_friction)})</span>
-            <span><i style="background:var(--silver)"></i>All other clients (${fmtInt(clients.length - P.good_clients_heavy_friction)})</span>
-            <span>Grades run from A, least friction, to F, most ${info("score", "How grades are set")}</span></div>
-        </section>
+        ${gridSection(P)}
         <section class="card">
           <h2>Good clients to look at first</h2>
           <div class="card-sub">Established band, heaviest friction first</div>
@@ -313,7 +308,7 @@
     const sa = document.getElementById("see-all");
     if (sa) sa.onclick = () => { state.showAllHeavy = !state.showAllHeavy; renderHome(); };
     document.getElementById("method-toggle").onclick = () => { state.showMethod = !state.showMethod; renderHome(); };
-    drawScatter(document.getElementById("scatter"));
+    wireGrid();
     drawTrend(document.getElementById("trend-chart"));
   }
 
@@ -341,16 +336,16 @@
     const maxN = Math.max(...rows.map((r) => r.windows[state.win].interventions));
     return `<section class="card">
       <div class="card-head"><div><h2>Rules causing the most friction</h2><div class="card-sub">${W().phrase[0].toUpperCase() + W().phrase.slice(1)} · highlighted: the highest ratio, where there may be most room to tune, and the costliest in dollars</div></div></div>
-      <div class="table-scroll"><table class="rule-table"><thead><tr><th>Rule</th><th>Interventions</th>
-        <th class="num">Fraud cases caught ${info("fraudcases")}</th><th class="num">Ratio ${info("perfraud")}</th>
-        <th class="num">Payouts held or denied</th><th>Room to relax ${info("relax")}</th></tr></thead><tbody>
+      <div class="table-scroll"><table class="rule-table"><thead><tr><th>Rule</th><th class="c">Interventions</th>
+        <th class="c">Fraud cases caught ${info("fraudcases")}</th><th class="c">Ratio ${info("perfraud")}</th>
+        <th class="c">Payouts held or denied</th><th>Room to relax ${info("relax")}</th></tr></thead><tbody>
       ${rows.map((r, i) => {
         const rw = r.windows[state.win], u = usdOf(r), pr = per(r);
         return `<tr><td><button class="rname${i === 0 ? " top" : ""}" data-rule="${r.rule_id}">${r.rule_id}</button></td>
-          <td><div class="inline-bar"><span style="width:${(100 * rw.interventions) / maxN}%" class="${i === 0 ? "top" : ""}"></span><b class="num">${fmtInt(rw.interventions)}</b></div></td>
-          <td class="num">${fmtInt(fraudOf(r))}</td>
-          <td class="num">${pr == null ? '<span class="muted">no fraud caught</span>' : `<span class="${pr === maxPer ? "hl-cell" : ""}">${fmt1(pr)}&nbsp;:&nbsp;1</span>`}</td>
-          <td class="num">${u ? `<span class="${u === maxUsd ? "hl-cell" : ""}">${fmtUsd(u)}</span>` : '<span class="muted">—</span>'}</td>
+          <td class="c"><div class="inline-bar"><span class="track"><span style="width:${(100 * rw.interventions) / maxN}%" class="${i === 0 ? "top" : ""}"></span></span><b class="num">${fmtInt(rw.interventions)}</b></div></td>
+          <td class="c">${fmtInt(fraudOf(r))}</td>
+          <td class="c">${pr == null ? '<span class="muted">no fraud caught</span>' : `<span class="${pr === maxPer ? "hl-cell" : ""}">${fmt1(pr)}&nbsp;:&nbsp;1</span>`}</td>
+          <td class="c">${u ? `<span class="${u === maxUsd ? "hl-cell" : ""}">${fmtUsd(u)}</span>` : '<span class="muted">—</span>'}</td>
           <td><span class="tag ${tagFor(rw.curve)}">${esc(rw.curve.label)}</span></td></tr>`;
       }).join("")}</tbody></table></div>
     </section>`;
@@ -383,80 +378,95 @@
     el("line", { x1: m.l, x2: width - m.r, y1: ys(0), y2: ys(0), class: "axis" }, svg);
   }
 
-  function drawScatter(box) {
-    // Rows are friction grades (F at the top), columns are good-client bands. Colour marks only
-    // the clients to look at first; the grade is read from the row, with its client count.
-    const width = Math.max(300, box.clientWidth);
-    const narrow = width < 560;
-    const H = narrow ? 300 : 340;
-    const m = { l: narrow ? 70 : 150, r: 8, t: 30, b: 44 };
-    const svg = el("svg", { viewBox: `0 0 ${width} ${H}`, role: "img", "aria-label": "Clients by friction grade and good-client band" }, box);
-    const iw = width - m.l - m.r, ih = H - m.t - m.b;
-    const total = clients.length, counts = D.portfolio[state.win].grade_counts;
-    const scores = clients.map((c) => c.windows[state.win].score[0]).sort((a, b) => a - b);
-    const ymax = Math.max(400, Math.ceil(scores[Math.floor(scores.length * 0.97)] / 100) * 100);
-    const rowH = ih / GRADES.length;
-    const rowTop = (g) => m.t + (GRADES.length - 1 - GRADES.indexOf(g)) * rowH;
-    const ys = (g, v) => {
-      const [lo, hi] = D.grades.cutoffs[g];
-      const f = Math.max(0, Math.min(1, (v - lo) / ((hi == null ? ymax : hi + 1) - lo)));
-      return rowTop(g) + rowH - 5 - f * (rowH - 10);
-    };
-    const cols = ["limited", "developing", "established"];
-    const cw = iw / 3;
-    const cx = (b) => m.l + cw * cols.indexOf(b);
-
-    // good clients, heavy friction
-    const heavyTop = Math.min(...HEAVY.map(rowTop)), heavyBot = Math.max(...HEAVY.map(rowTop)) + rowH;
-    el("rect", { x: cx("established"), y: heavyTop, width: cw, height: heavyBot - heavyTop, fill: "var(--heavy-wash)" }, svg);
-    GRADES.forEach((g) => {
-      const y = rowTop(g);
-      if (g !== GRADES[GRADES.length - 1]) el("line", { x1: m.l, x2: m.l + iw, y1: y, y2: y, class: "grid" }, svg);
-      el("rect", { x: 8, y: y + rowH / 2 - 10, width: 20, height: 20, rx: 6, fill: gradeColor(g) }, svg);
-      txt(svg, 18, y + rowH / 2 + 4, g, { "text-anchor": "middle", style: "fill:#fff;font-weight:700;font-size:11.5px" });
-      const n = counts[g] || 0;
-      txt(svg, 36, y + rowH / 2 + 4, narrow ? String(n) : `${fmtInt(n)} client${n === 1 ? "" : "s"} · ${pct((100 * n) / total)}`, { class: "t-ink", style: "font-size:12px" });
-    });
-    el("line", { x1: m.l, x2: m.l + iw, y1: heavyBot, y2: heavyBot, stroke: "var(--border-strong)" }, svg);
-    el("line", { x1: m.l, x2: m.l + iw, y1: m.t + ih, y2: m.t + ih, class: "axis" }, svg);
-    for (let i = 1; i < 3; i++) el("line", { x1: m.l + cw * i, x2: m.l + cw * i, y1: m.t, y2: m.t + ih, stroke: "var(--border)" }, svg);
-
-    const nHeavy = D.portfolio[state.win].good_clients_heavy_friction;
-    txt(svg, 8, 16, "Friction grade", { style: "font-size:11.5px" });
-    txt(svg, cx("established") + 8, 18, narrow ? `Start here · ${nHeavy}` : `Start here: ${nHeavy} good clients with heavy friction`, { style: "font-size:12px;font-weight:700;fill:var(--accent-ink)" });
-    if (!narrow) txt(svg, cx("limited") + 8, 18, "Expected here: new clients, past fraud", { style: "font-size:11.5px" });
-    cols.forEach((b) => txt(svg, cx(b) + cw / 2, m.t + ih + 18, bandLabel(b), { "text-anchor": "middle", class: "t-ink" }));
-    txt(svg, m.l + iw / 2, m.t + ih + 36, narrow ? "Good-client evidence  →" : "Good-client evidence  →  tenure, cleared reviews, no confirmed fraud", { "text-anchor": "middle" });
-
-    const pad = 12;
-    const pos = (c) => { const w = c.windows[state.win]; return [cx(c.band) + pad + c.x * (cw - 2 * pad), ys(w.grade, w.score[0])]; };
-    const order = clients.slice().sort((a, b) => a.windows[state.win].heavy - b.windows[state.win].heavy);
-    order.forEach((c) => {
-      const w = c.windows[state.win];
-      const [x, y] = pos(c);
-      const dot = el("circle", w.heavy
-        ? { cx: x, cy: y, r: 5, fill: "var(--accent)", stroke: "#fff", "stroke-width": 1, style: "cursor:pointer" }
-        : { cx: x, cy: y, r: 3.6, fill: "var(--silver)", "fill-opacity": 0.75, style: "cursor:pointer" }, svg);
-      bindTip(dot, `<b>${esc(c.name)}</b><br><span class="t-muted">${bandLabel(c.band)} · ${esc(c.segment_label)}${c.tenure_months != null ? ` · ${c.tenure_months} months` : ""}</span><br>
-        Grade <b>${w.grade}</b> · more friction than ${pct(w.peer_pct[0])} of similar clients<br>${w.n} interventions · ${esc(causeText(c))}`);
-      dot.addEventListener("click", () => go("#client/" + c.client_id));
-    });
-    if (!narrow) {
-      const halo = "paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round";
-      [[demo.open_client, "left", (c) => c.name], [demo.guardrail_client, "right", (c) => `${c.name} · ${c.evidence.confirmed_fraud} fraud cases`]].forEach(([id, side, label]) => {
-        const c = clients.find((k) => k.client_id === id);
-        if (!c) return;
-        const [x, y] = pos(c);
-        el("circle", { cx: x, cy: y, r: 8, fill: "none", stroke: "var(--ink)", "stroke-width": 1.5, "pointer-events": "none" }, svg);
-        txt(svg, side === "left" ? x - 12 : x + 12, y + 4, label(c), { class: "t-ink", "text-anchor": side === "left" ? "end" : "start", style: `font-size:12px;font-weight:600;${halo}`, "pointer-events": "none" });
-      });
-    }
+  // Who carries the friction: clients counted by friction grade (rows) and good-client band
+  // (columns). Every number opens the list of clients behind it.
+  const BANDS = ["limited", "developing", "established"];
+  const inCell = (cell) => {
+    const [g, b] = cell.split("|");
+    return clients.filter((c) => (!g || c.windows[state.win].grade === g) && (!b || c.band === b));
+  };
+  function gridSection(P) {
+    const count = (g, b) => inCell(`${g}|${b}`).length;
+    const total = clients.length;
+    const max = Math.max(...GRADES.flatMap((g) => BANDS.map((b) => count(g, b))));
+    const cellBtn = (n, cell, label) => n
+      ? `<button type="button" class="cell-btn${state.cell === cell ? " active" : ""}" data-cell="${cell}" aria-label="${label}: list them">${fmtInt(n)}</button>`
+      : '<span class="muted">0</span>';
+    const rows = GRADES.slice().reverse().map((g) => {
+      const cells = BANDS.map((b) => {
+        const n = count(g, b), a = n ? 0.06 + (0.42 * n) / max : 0;
+        const focus = b === "established" && HEAVY.includes(g);
+        return `<td class="gcell${focus ? " focus" : ""}" style="background:rgba(139,103,242,${a.toFixed(3)})">${cellBtn(n, `${g}|${b}`, `${n} ${bandLabel(b).toLowerCase()} clients graded ${g}`)}</td>`;
+      }).join("");
+      const n = P.grade_counts[g] || 0;
+      const note = g === GRADES[GRADES.length - 1] ? "most friction" : g === GRADES[0] ? "least friction" : "";
+      return `<tr><th scope="row"><span class="grade-badge sm" style="background:${gradeColor(g)}">${g}</span>${note ? `<span class="gnote">${note}</span>` : ""}</th>${cells}
+        <td class="gtot">${cellBtn(n, `${g}|`, `${n} clients graded ${g}`)}<span class="muted"> · ${pct((100 * n) / total)}</span></td></tr>`;
+    }).join("");
+    const foot = BANDS.map((b) => { const n = inCell(`|${b}`).length; return `<td class="gtot">${cellBtn(n, `|${b}`, `${n} ${bandLabel(b).toLowerCase()} clients`)}</td>`; }).join("");
+    return `<section class="card">
+      <div class="card-head"><h2>Who carries the friction</h2></div>
+      <div class="card-sub">Clients by friction grade and good-client history (tenure, cleared reviews, no confirmed fraud). Click a number to list them.</div>
+      <div class="table-scroll"><table class="grid-table">
+        <colgroup><col class="g-row"><col><col><col><col class="g-tot"></colgroup>
+        <thead><tr><th>Friction grade ${info("score", "How grades are set")}</th>${BANDS.map((b) => `<th>${bandLabel(b)}</th>`).join("")}<th>All clients</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><th scope="row">All grades</th>${foot}<td class="gtot">${cellBtn(total, "|", `All ${total} clients`)}</td></tr></tfoot>
+      </table></div>
+      <p class="card-note grid-key"><span class="key-box"></span>Established clients graded ${HEAVY.join(" or ")}: good clients carrying heavy friction (${fmtInt(P.good_clients_heavy_friction)})</p>
+    </section>`;
   }
-  function causeLine(c) {
-    const w = c.windows[state.win];
-    const top = w.top_rule && w.by_rule[w.top_rule];
-    if (!top) return "no interventions";
-    return top.count === w.n ? `all ${w.n} from one rule` : `${top.count} of ${w.n} from one rule`;
+  function cellTitle(cell) {
+    const [g, b] = cell.split("|");
+    if (g && b) return `${bandLabel(b)} clients graded ${g}`;
+    if (g) return `All clients graded ${g}`;
+    if (b) return `${bandLabel(b)} clients, all grades`;
+    return "All clients";
+  }
+  function topRuleByCount(w) {
+    const e = Object.entries(w.by_rule).sort((x, y) => y[1].count - x[1].count || y[1].score - x[1].score)[0];
+    return e ? { rule: e[0], count: e[1].count } : null;
+  }
+  function openCell(cell, focus) {
+    closeCell(false);
+    state.cell = cell;
+    const list = inCell(cell).sort((x, y) => y.windows[state.win].n - x.windows[state.win].n || y.windows[state.win].score[0] - x.windows[state.win].score[0]);
+    const panel = document.createElement("div");
+    panel.className = "cell-panel";
+    panel.id = "cell-panel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-labelledby", "cell-title");
+    panel.innerHTML = `<div class="cp-head"><div><h3 id="cell-title" tabindex="-1">${cellTitle(cell)}</h3>
+        <div class="card-sub">${fmtInt(list.length)} client${list.length === 1 ? "" : "s"} · ${W().phrase} · most interventions first</div></div>
+        <button type="button" class="cp-close" aria-label="Close the list">×</button></div>
+      <div class="cp-body"><table class="cp-table"><thead><tr><th>Client</th><th class="c">Transactions ${info("txn", "What counts as a transaction")}</th><th class="c">Transaction value</th><th class="c">Interventions</th><th>Rule causing most</th></tr></thead>
+      <tbody>${list.map((c) => {
+        const w = c.windows[state.win], t = topRuleByCount(w);
+        return `<tr><td><a href="#client/${c.client_id}" data-client="${c.client_id}">${esc(c.name)}</a></td>
+          <td class="c" data-label="Transactions">${fmtInt(w.txn[0])}</td><td class="c" data-label="Value">${fmtUsd(w.txn[1])}</td><td class="c" data-label="Interventions"><b>${fmtInt(w.n)}</b></td>
+          <td class="nowrap" data-label="Rule causing most">${t ? `<a href="#rule/${t.rule}" data-rule="${t.rule}">${t.rule}</a> <span class="muted">· ${t.count} of ${w.n}</span>` : '<span class="muted">none</span>'}</td></tr>`;
+      }).join("")}</tbody></table></div>`;
+    view.appendChild(panel);
+    wireInfo(panel);
+    panel.querySelector(".cp-close").onclick = () => closeCell(true);
+    panel.querySelectorAll("[data-client]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); go("#client/" + a.dataset.client); }));
+    panel.querySelectorAll("[data-rule]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); go("#rule/" + a.dataset.rule); }));
+    view.querySelectorAll(".cell-btn").forEach((b) => b.classList.toggle("active", b.dataset.cell === cell));
+    if (focus) panel.querySelector("#cell-title").focus();
+  }
+  function closeCell(restoreFocus) {
+    const panel = document.getElementById("cell-panel");
+    if (!panel) { state.cell = null; return; }
+    const cell = state.cell;
+    panel.remove();
+    state.cell = null;
+    hideTip();
+    view.querySelectorAll(".cell-btn.active").forEach((b) => b.classList.remove("active"));
+    if (restoreFocus) { const b = view.querySelector(`.cell-btn[data-cell="${cell}"]`); if (b) b.focus(); }
+  }
+  function wireGrid() {
+    view.querySelectorAll(".cell-btn").forEach((b) => (b.onclick = () => (state.cell === b.dataset.cell ? closeCell(true) : openCell(b.dataset.cell, true))));
+    if (state.cell) openCell(state.cell, false);
   }
 
   function methodSection() {
@@ -1163,6 +1173,7 @@
     go(h === "#client" ? "#client/" + state.clientId : h === "#rule" ? "#rule/" + state.ruleId : h);
   });
   window.addEventListener("popstate", () => route(location.hash));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.getElementById("cell-panel")) closeCell(true); });
   window.addEventListener("hashchange", () => { if (location.hash !== routed) route(location.hash); });
   let rt;
   window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 150); });

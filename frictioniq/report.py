@@ -150,6 +150,11 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
         amount = np.nan_to_num(ds.features["amount"][ds.hit_event])
         good_heavy = 0
         grade_counts = {g: 0 for g in cfg["friction_grades"]["cutoffs"]}
+        # transactions: the money movements the rules screen (captures, settlements, payouts);
+        # boarding checks carry no amount and are not transactions
+        txn_w = (ds.event_t >= ds.as_of - days * 24) & ~np.isnan(ds.features["amount"])
+        txn_n = np.bincount(ds.event_client[txn_w], minlength=ds.n_clients)
+        txn_usd = np.bincount(ds.event_client[txn_w], weights=ds.features["amount"][txn_w], minlength=ds.n_clients)
         for i in range(ds.n_clients):
             m = prev_w & (ds.hit_client == i)
             by_rule = {}
@@ -170,6 +175,7 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                 "grade_range": [grade_of(np.percentile(scores[i, 1:], 5), cfg),
                                 grade_of(np.percentile(scores[i, 1:], 95), cfg)],
                 "n": int(wb["count"][i]),
+                "txn": [int(txn_n[i]), _r(txn_usd[i], 0)],
                 "prev_n": None if wb["prev_count"] is None else int(wb["prev_count"][i]),
                 "by_rule": {k: {"count": v["count"], "score": _r(v["score"], 1)} for k, v in by_rule.items()},
                 "top_rule": top[0] if top else None,

@@ -297,6 +297,15 @@ def test_fraud_saved_and_lost_add_up_to_all_fraud(world, wkey):
         w = r["windows"][wkey]
         assert w["curve"]["points"][0]["rule_interventions_all"] == w["interventions"]
 
+
+def test_client_transactions_count_every_money_movement_once(world):
+    ds, _, res, clients, _ = world
+    w = ds.event_t >= ds.as_of - 30 * 24
+    money = w & ~np.isnan(ds.features["amount"])
+    assert sum(c["windows"]["30d"]["txn"][0] for c in res["clients"]) == int(money.sum())
+    acme = clients["ACME-0417"]["windows"]["30d"]
+    assert acme["txn"][0] >= acme["n"] and acme["txn"][1] > 0
+
 def test_trend_shows_the_hero_rule_launch(world):
     _, _, res, _, _ = world
     b = res["trend"]["buckets"]
