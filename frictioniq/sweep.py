@@ -113,7 +113,7 @@ REVIEW_HOURS_PER_HOLD = 0.5
 
 def ledger(ds: Dataset, mask: np.ndarray, amount: np.ndarray) -> dict:
     """Friction in measured units for a set of prevailing hits: interventions, clients,
-    dollars of payouts denied or held, days waiting on money, settlement limited, review hours."""
+    dollars of payouts denied or held, payout hold time in days, settlement limited, review hours."""
     payout = ds.event_is_payout[ds.hit_event]
     dec = ds.hit_decision
     denied = mask & payout & (dec == "DENY")

@@ -322,6 +322,7 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
         ev = b["evidence"]
         clients_out.append({
             "client_id": c["client_id"], "name": c["client_name"], "entity": c["entity"], "segment": c["segment"],
+            "type": c.get("client_type") or c["segment"], "region": c.get("region") or None,
             "segment_label": f'{c["entity"].title() if c["entity"] == "DIRECT" else "Payfac"} {SEGMENT_LABELS[c["segment"]]}',
             "tenure_months": c["tenure_months"], "peer_group": c["peer_group"],
             "band": b["band"], "disqualified": b["disqualified"], "unknown": b["unknown"],

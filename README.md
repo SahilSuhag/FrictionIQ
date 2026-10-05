@@ -33,7 +33,7 @@ open web/index.html                 # or: make serve  →  http://localhost:8000
 The page is static. It reads `web/data/frictioniq.js` and never recomputes anything, so the
 window selector and the threshold slider respond instantly.
 
-## The three screens
+## The screens
 
 They follow the Figma designs' layout and content, in Manrope, with white cards on a light grey
 page. Colours: orange `#F29F67` for friction, the rule at fault and highlights; dark navy `#1E1E2C`
@@ -48,8 +48,9 @@ sits behind a disclosure (**Details**, **How it's calculated**, **Method and suc
 
 | Screen | Answers | What's on it |
 |---|---|---|
-| **Home** (portfolio) | How big is this, and where do I look first? | A row of six headline metrics, each with its change against the previous window: interventions, payouts held or denied, client-days waiting, good clients with heavy friction, then **fraud saved** and **fraud loss**; one key finding, the 12-month trend and the rule behind it, beside two infographic cards: **safe to remove** (interventions that can go with no fraud lost, as a share of all) and two rings showing the fraud cases caught two ways: as a share of all interventions (7.5%, about 1 in 13 found fraud) and as a share of all fraud (92.2% caught); a count grid of clients by friction grade (A–F rows, each tinted in its grade colour, with each grade's client total and share and its interventions and share of all interventions) and good-client band (columns). Click any number and the list of those clients opens under the grid, with the number kept highlighted: transactions, transaction value, interventions and the rule causing most; good clients to look at first; one table of the rules causing the most friction (interventions, fraud cases caught, their ratio, payouts held or denied, room to relax), with the highest ratio and the costliest rule highlighted |
-| **Client friction detail** | Is this good client being over-challenged, and by which rule? | One-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); time waiting on their money; payouts denied; share from the top rule; percentile among similar clients; one timeline lane per rule; intervention log with the points each intervention adds and the total; good-client evidence; "why this rule keeps firing" plot; how the score is calculated, collapsed until asked for |
+| **Home** (portfolio) | How big is this, and where do I look first? | A row of six headline metrics, each with its change against the previous window: interventions, payouts held or denied, payout hold time, good clients with heavy friction, then **fraud saved** and **fraud loss**; one key finding, the 12-month trend and the rule behind it, beside two infographic cards: **safe to remove** (interventions that can go with no fraud lost, as a share of all) and two rings showing the fraud cases caught two ways: as a share of all interventions (7.5%, about 1 in 13 found fraud) and as a share of all fraud (92.2% caught); a count grid of clients by friction grade (A–F rows, each tinted in its grade colour, with each grade's client total and share and its interventions and share of all interventions) and good-client band (columns). Click any number and the list of those clients opens under the grid, with the number kept highlighted: transactions, transaction value, interventions and the rule causing most; good clients to look at first; one table of the rules causing the most friction (interventions, fraud cases caught, their ratio, payouts held or denied, room to relax), with the highest ratio and the costliest rule highlighted |
+| **Clients** | Which clients carry friction, by group? | Every client grouped by friction grade (F to A, collapsible, F and E open), with filters for good-client history, client type (Enterprise, Middle Market, SMB, ISV, Scotia) and region (CA, US, EMEA, APAC), a name or ID search, and a strip of grade counts. Each row shows history, type, region, transactions, interventions, the rule causing most and the friction score; **How it adds up** drops down that client's score, intervention by intervention (weight × hold-time factor × recency = points), to the total and grade. Open a client for its page |
+| **Client friction detail** | Is this good client being over-challenged, and by which rule? | One-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); payout hold time (how long its payouts sat on hold for review, added up); payouts denied; share from the top rule; percentile among similar clients; one timeline lane per rule; intervention log with the points each intervention adds and the total; good-client evidence; "why this rule keeps firing" plot; how the score is calculated, collapsed until asked for |
 | **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Rule list with room-to-relax tags; the curve (friction removed as a band across weightings, fraud still caught as a line, the safe range shaded and named); a threshold slider aligned under the x-axis (or type a value); three numbers against today (interventions removed, payouts no longer held or denied, fraud still caught); the plain-language sentence; a shadow-test proposal you can draft and copy. **Details** holds the full dollar ledger, the option to apply the change only to established high-friction clients, and the method |
 
 ## Friction, counted (the differentiator)
@@ -58,8 +59,8 @@ Fraud capture is reported today. Friction is not, because nothing adds it up. Fr
 compiles it in two ways that appear throughout the screens:
 
 - **Measured units, no weights.** The headline numbers on Home are built from the logged rule
-  hits alone: interventions, legitimate payouts held or denied ($, with client-days waiting in
-  the hover), and friction that can be removed at no fraud cost, each against the previous
+  hits alone: interventions, legitimate payouts held or denied ($), payout hold time (days payouts sat on hold for
+  review, added up), and friction that can be removed at no fraud cost, each against the previous
   window. Two fraud metrics sit beneath them, also against the previous window:
   - **Fraud saved**: confirmed fraud a live rule denied or held, in payout dollars, with the
     count of cases ($165k, 95 of 103 cases).
@@ -67,7 +68,7 @@ compiles it in two ways that appear throughout the screens:
 
   Together they make up all confirmed fraud in the window. Cases with no payout amount, such as
   boarding fraud, count as cases but add no dollars. The full ledger (interventions that found no
-  fraud, payouts held and denied, client-days waiting, ops review hours, fraud caught) is under
+  fraud, payouts held and denied, payout hold time, ops review hours, fraud caught) is under
   **Details → Counting in dollars** on each rule page, comparing today with the selected
   threshold. It includes the rule's ratio of interventions to fraud cases caught, and legitimate
   dollars held or denied per fraud dollar stopped. Review time assumes 30 minutes per hold (the PRD says
@@ -228,7 +229,7 @@ frictioniq/   analysis: index, attribution, bands, weighting sweep, threshold sw
 config/       frictioniq.json (placeholder weights, grades, sweep ranges), demo.json (demo walk-through only)
 design/       the Figma screen designs and their README
 data/         frictioniq-mock.json (the designers' target shape); generated CSVs land here (gitignored)
-web/          the three screens, vanilla JS + SVG, reading web/data/frictioniq.js
+web/          the screens, vanilla JS + SVG, reading web/data/frictioniq.js
 tests/        PRD scenarios, design labels, invariants
 ```
 
@@ -242,6 +243,10 @@ tests/        PRD scenarios, design labels, invariants
   enterprise and payfac payouts are bulk, so `payout_limit_100` doesn't apply to them.
 - New `disputes` table for account standing.
 - The history is now 12 months, Oct 3 2025 to Oct 3 2026, to support the 1-year window.
+- Clients gain `client_type` (ENTERPRISE, MID_MARKET, SMB, ISV, SCOTIA) and `region` (CA, US, EMEA,
+  APAC) for the Clients filters. Payfac platforms are ISVs, 15% of direct background clients are
+  typed SCOTIA as a placeholder, and the rest keep their segment. Both come from a hash of the
+  client ID, not the seeded random generator, so every other generated value is unchanged.
 
 ## Where this departs from the PRD or the mock
 

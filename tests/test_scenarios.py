@@ -306,6 +306,16 @@ def test_client_transactions_count_every_money_movement_once(world):
     acme = clients["ACME-0417"]["windows"]["30d"]
     assert acme["txn"][0] >= acme["n"] and acme["txn"][1] > 0
 
+
+def test_clients_have_a_type_and_region(world):
+    from contract import schema
+    _, _, res, clients, _ = world
+    assert all(c["type"] in schema.CLIENT_TYPES and c["region"] in schema.REGIONS for c in res["clients"])
+    assert {c["type"] for c in res["clients"]} == set(schema.CLIENT_TYPES)
+    assert {c["region"] for c in res["clients"]} == set(schema.REGIONS)
+    # scenario clients keep their segment as their type; payfac platforms are ISVs
+    assert clients["ACME-0417"]["type"] == "SMB" and clients["NORT-7716"]["type"] == "ISV"
+
 def test_trend_shows_the_hero_rule_launch(world):
     _, _, res, _, _ = world
     b = res["trend"]["buckets"]

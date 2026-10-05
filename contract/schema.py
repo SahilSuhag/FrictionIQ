@@ -46,7 +46,12 @@ CLIENT_FIELDS = [
     "segment",           # SMB | MID_MARKET | ENTERPRISE
     "tenure_months",     # may be blank (controlled missingness)
     "peer_group",        # may be blank (controlled missingness)
+    "client_type",       # ENTERPRISE | MID_MARKET | SMB | ISV | SCOTIA
+    "region",            # CA | US | EMEA | APAC
 ]
+
+CLIENT_TYPES = ["ENTERPRISE", "MID_MARKET", "SMB", "ISV", "SCOTIA"]
+REGIONS = ["CA", "US", "EMEA", "APAC"]
 
 INCIDENT_FIELDS = ["incident_id", "start", "end", "affected_clients", "severity"]
 

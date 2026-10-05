@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import random
@@ -143,6 +144,34 @@ def build_world(seed: int):
     return clients, events, hits, incidents, fraud_cases, disputes
 
 
+# Region and client type are drawn from a hash of the client ID rather than the seeded RNG, so
+# adding them left every other generated value unchanged.
+REGION_MIX = [("CA", 40), ("US", 30), ("EMEA", 18), ("APAC", 12)]
+SCOTIA_SHARE = 15   # percent of direct background clients typed SCOTIA
+
+
+def _bucket(client_id: str, salt: str) -> int:
+    return int(hashlib.sha256(f"{salt}:{client_id}".encode()).hexdigest(), 16) % 100
+
+
+def region_of(c: Client) -> str:
+    b, total = _bucket(c.client_id, "region"), 0
+    for region, share in REGION_MIX:
+        total += share
+        if b < total:
+            return region
+    return REGION_MIX[-1][0]
+
+
+def client_type_of(c: Client) -> str:
+    """ISV for payfac platforms; SCOTIA for a share of direct background clients; else the segment."""
+    if c.entity == "PAYFAC":
+        return "ISV"
+    if c.scenario is None and _bucket(c.client_id, "type") < SCOTIA_SHARE:
+        return "SCOTIA"
+    return c.segment
+
+
 def write_csv(path, fields, rows):
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
@@ -164,7 +193,8 @@ def main(argv=None):
     write_csv(os.path.join(args.out, "ruleset_bindings.csv"), schema.RULESET_BINDING_FIELDS,
               registry.binding_rows())
     write_csv(os.path.join(args.out, "clients.csv"), schema.CLIENT_FIELDS,
-              [vars(c) for c in sorted(clients.values(), key=lambda c: c.client_id)])
+              [{**vars(c), "client_type": client_type_of(c), "region": region_of(c)}
+               for c in sorted(clients.values(), key=lambda c: c.client_id)])
     write_csv(os.path.join(args.out, "decision_events.csv"), schema.DECISION_EVENT_FIELDS,
               [{"event_id": e.event_id, "client_id": e.client_id, "checkpoint": e.checkpoint,
                 "request_type": e.request_type, "occurred_at": ts(e.t), **e.features} for e in events])
