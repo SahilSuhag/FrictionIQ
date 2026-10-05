@@ -150,6 +150,7 @@
     review: () => `<b>Ops review time</b><br>Every hold becomes a manual review. This assumes 30 minutes each; the PRD's taxonomy puts it at 20–40.`,
     removed: () => `<b>Friction removed</b><br>The fall in friction score, summed over every client, as a share of what this rule causes today. It is a band because the weights are placeholders: ${NW} weightings with the same ordering were tried.`,
     perfraud: () => `<b>Ratio: interventions per fraud case</b><br>The rule's interventions divided by the fraud cases it caught. 20 : 1 means it intervened 20 times for each fraud case it caught, so most of its interventions landed on good clients. The higher the ratio, the more room there may be to tune the rule. Its <i>Room to relax</i> tag says whether it can be loosened without missing fraud.`,
+    gridints: () => `<b>Interventions</b><br>Every intervention the clients in this grade received in the window, and that grade's share of all interventions. Each client's own count is in the list behind the client numbers.`,
     txn: () => `<b>Transactions</b><br>The money movements the rules screened in this window: card payments captured, settlements and payouts, with their total value. Boarding checks are not transactions.`,
     fraudcases: () => `<b>Fraud cases caught</b><br>Confirmed fraud cases this rule fired on. One case can trip more than one rule, so this column adds up to more than the fraud saved total.`,
     saved: () => `<b>Fraud saved</b><br>Confirmed fraud that a live rule denied or held before the money left, in payout dollars, across every client. Cases with no payout amount, such as boarding fraud, count as cases but add no dollars.`,
@@ -385,35 +386,37 @@
     const [g, b] = cell.split("|");
     return clients.filter((c) => (!g || c.windows[state.win].grade === g) && (!b || c.band === b));
   };
+  const tint = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
   function gridSection(P) {
     const count = (g, b) => inCell(`${g}|${b}`).length;
     const total = clients.length;
-    const max = Math.max(...GRADES.flatMap((g) => BANDS.map((b) => count(g, b))));
+    const ints = (g) => inCell(`${g}|`).reduce((t, c) => t + c.windows[state.win].n, 0);
+    const allInts = GRADES.reduce((t, g) => t + ints(g), 0);
     const cellBtn = (n, cell, label) => n
       ? `<button type="button" class="cell-btn${state.cell === cell ? " active" : ""}" data-cell="${cell}" aria-label="${label}: list them">${fmtInt(n)}</button>`
       : '<span class="muted">0</span>';
     const rows = GRADES.slice().reverse().map((g) => {
       const cells = BANDS.map((b) => {
-        const n = count(g, b), a = n ? 0.06 + (0.42 * n) / max : 0;
-        const focus = b === "established" && HEAVY.includes(g);
-        return `<td class="gcell${focus ? " focus" : ""}" style="background:rgba(139,103,242,${a.toFixed(3)})">${cellBtn(n, `${g}|${b}`, `${n} ${bandLabel(b).toLowerCase()} clients graded ${g}`)}</td>`;
+        const n = count(g, b);
+        return `<td class="gcell" style="background:${tint(gradeColor(g), n ? 0.2 : 0.07)}">${cellBtn(n, `${g}|${b}`, `${n} ${bandLabel(b).toLowerCase()} clients graded ${g}`)}</td>`;
       }).join("");
+      const k = ints(g);
       const n = P.grade_counts[g] || 0;
       const note = g === GRADES[GRADES.length - 1] ? "most friction" : g === GRADES[0] ? "least friction" : "";
       return `<tr><th scope="row"><span class="grade-badge sm" style="background:${gradeColor(g)}">${g}</span>${note ? `<span class="gnote">${note}</span>` : ""}</th>${cells}
-        <td class="gtot">${cellBtn(n, `${g}|`, `${n} clients graded ${g}`)}<span class="muted"> · ${pct((100 * n) / total)}</span></td></tr>`;
+        <td class="gtot">${cellBtn(n, `${g}|`, `${n} clients graded ${g}`)}<span class="muted"> · ${pct((100 * n) / total)}</span></td>
+        <td class="gint"><b>${fmtInt(k)}</b><span class="muted"> · ${pct((100 * k) / Math.max(allInts, 1))}</span></td></tr>`;
     }).join("");
     const foot = BANDS.map((b) => { const n = inCell(`|${b}`).length; return `<td class="gtot">${cellBtn(n, `|${b}`, `${n} ${bandLabel(b).toLowerCase()} clients`)}</td>`; }).join("");
     return `<section class="card">
       <div class="card-head"><h2>Who carries the friction</h2></div>
-      <div class="card-sub">Clients by friction grade and good-client history (tenure, cleared reviews, no confirmed fraud). Click a number to list them.</div>
+      <div class="card-sub">Clients by friction grade and good-client history (tenure, cleared reviews, no confirmed fraud). Click a client count to list them.</div>
       <div class="table-scroll"><table class="grid-table">
-        <colgroup><col class="g-row"><col><col><col><col class="g-tot"></colgroup>
-        <thead><tr><th>Friction grade ${info("score", "How grades are set")}</th>${BANDS.map((b) => `<th>${bandLabel(b)}</th>`).join("")}<th>All clients</th></tr></thead>
+        <colgroup><col class="g-row"><col><col><col><col class="g-tot"><col class="g-int"></colgroup>
+        <thead><tr><th>Friction grade ${info("score", "How grades are set")}</th>${BANDS.map((b) => `<th>${{ limited: "Limited history", developing: "Devel&shy;oping", established: "Estab&shy;lished" }[b]}</th>`).join("")}<th>All clients</th><th>Inter&shy;ventions ${info("gridints")}</th></tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr><th scope="row">All grades</th>${foot}<td class="gtot">${cellBtn(total, "|", `All ${total} clients`)}</td></tr></tfoot>
+        <tfoot><tr><th scope="row">All<span class="wide-only"> grades</span></th>${foot}<td class="gtot">${cellBtn(total, "|", `All ${total} clients`)}</td><td class="gint"><b>${fmtInt(allInts)}</b></td></tr></tfoot>
       </table></div>
-      <p class="card-note grid-key"><span class="key-box"></span>Established clients graded ${HEAVY.join(" or ")}: good clients carrying heavy friction (${fmtInt(P.good_clients_heavy_friction)})</p>
       <div id="cell-list" class="cell-list" role="region" aria-live="polite"></div>
     </section>`;
   }
