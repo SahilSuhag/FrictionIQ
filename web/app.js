@@ -262,7 +262,20 @@
       const tone = Math.abs(d) < 0.5 ? "" : (d > 0) === upIsWorse ? " worse" : " better";
       return `<span class="delta${tone}" title="vs previous ${W().label}">${d >= 0 ? "▲" : "▼"} ${pct(Math.abs(d))}</span>`;
     };
-    const kpi = (label, value, sub, extra, cls) => `<div class="card kpi${cls ? " " + cls : ""}"><div class="label">${label}${extra || ""}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+    // headline metrics: label, number, and the change against the previous period (or a fact)
+    const metric = (label, value, change, fallback, extra, cls) => `<div class="metric${cls ? " " + cls : ""}">
+      <div class="m-label">${label}${extra || ""}</div><div class="m-value">${value}</div>
+      <div class="m-delta">${change ? `${change} <span>vs previous ${W().days} days</span>` : `<span>${fallback}</span>`}</div></div>`;
+    const ring = (frac, color, label, value, sub) => {
+      const C = 2 * Math.PI * 18;
+      return `<div class="ring-item"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+          <circle cx="24" cy="24" r="18" fill="none" stroke="var(--border)" stroke-width="6"/>
+          <circle cx="24" cy="24" r="18" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round"
+            stroke-dasharray="${(C * frac).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 24 24)"/></svg>
+        <div><div class="r-label">${label}</div><div class="r-value">${value}</div><div class="r-sub">${sub}</div></div></div>`;
+    };
+    const share = P.free_to_remove / Math.max(P.interventions, 1);
+    const est = clients.filter((c) => c.band === "established").length;
     const FP = prev && prev.fraud;
     const usdNow = L.held_usd + L.denied_usd;
     const usdPrev = prev ? prev.ledger.held_usd + prev.ledger.denied_usd : null;
@@ -273,17 +286,30 @@
           <p class="lead">How often our fraud rules interrupt clients, which rules do it, and which good clients carry the most.</p></div>
         ${windowControl()}
       </div>
-      <div class="kpis">
-        ${kpi("Interventions", fmtInt(P.interventions), `${pct((100 * L.n) / Math.max(P.interventions, 1))} found no fraud${prev ? ` · ${fmtInt(prev.interventions)} the ${W().days}&nbsp;days before` : ""}`, delta(P.interventions, prev && prev.interventions), "hl")}
-        ${kpi("Payouts held or denied", fmtUsd(usdNow), `${fmtInt(L.wait_days)} client-days waiting on money`, `${delta(usdNow, usdPrev)} ${info("ledger", "About these figures")}`)}
-        ${kpi("Good clients, heavy friction", fmtInt(P.good_clients_heavy_friction), `Established band, graded ${HEAVY.join(" or ")}`, ` ${info("score", "How the friction score works")}`)}
-        ${kpi("Safe to remove", fmtInt(P.free_to_remove), `interventions · ${fmtUsd(P.freed.usd)} of payouts, no fraud lost`, ` ${info("relax", "What counts as safe")}`)}
+      <div class="metrics">
+        ${metric("Interventions", fmtInt(P.interventions), delta(P.interventions, prev && prev.interventions), "no earlier period in the data")}
+        ${metric("Payouts held or denied", fmtUsd(usdNow), delta(usdNow, usdPrev), "no earlier period in the data", ` ${info("ledger", "About these figures")}`)}
+        ${metric("Client-days waiting", fmtInt(L.wait_days), prev ? delta(L.wait_days, prev.ledger.wait_days) : "", "on held payouts")}
+        ${metric("Good clients, heavy friction", fmtInt(P.good_clients_heavy_friction), "", `of ${fmtInt(est)} established, graded ${HEAVY.join(" or ")}`, ` ${info("score", "How the friction score works")}`)}
+        ${metric("Fraud saved", fmtUsd(F.caught_usd), delta(F.caught_usd, FP && FP.caught_usd, false), `${fmtInt(F.caught)} of ${fmtInt(F.total)} cases`, ` ${info("saved", "What counts as fraud saved")}`, "split")}
+        ${metric("Fraud loss", fmtUsd(F.lost_usd), delta(F.lost_usd, FP && FP.lost_usd), `${fmtInt(F.total - F.caught)} cases no rule stopped`, ` ${info("lost", "What counts as fraud loss")}`)}
       </div>
-      <div class="fraud-kpis">
-        ${kpi("Fraud saved", fmtUsd(F.caught_usd), `${fmtInt(F.caught)} of ${fmtInt(F.total)} fraud cases stopped by the rules`, `${delta(F.caught_usd, FP && FP.caught_usd, false)} ${info("saved", "What counts as fraud saved")}`, "fraud")}
-        ${kpi("Fraud loss", fmtUsd(F.lost_usd), `${fmtInt(F.total - F.caught)} fraud case${F.total - F.caught === 1 ? "" : "s"} no rule stopped`, `${delta(F.lost_usd, FP && FP.lost_usd)} ${info("lost", "What counts as fraud loss")}`, "fraud")}
+      <div class="home-top">
+        ${bannerSection()}
+        <div class="side-cards">
+          <section class="card dark-card">
+            <h3>Safe to remove ${info("relax", "What counts as safe")}</h3>
+            <div class="dc-label">Interventions that can go with no fraud lost</div>
+            <div class="dc-value">${fmtInt(P.free_to_remove)}</div>
+            <div class="dc-bar" role="img" aria-label="${pct(100 * share)} of all interventions"><span style="width:${(100 * share).toFixed(1)}%"></span></div>
+            <div class="dc-sub">${pct(100 * share)} of all interventions · ${fmtUsd(P.freed.usd)} of payouts · ${fmtInt(P.free_to_remove_clients)} clients</div>
+          </section>
+          <section class="card ring-card">
+            ${ring(L.n / Math.max(P.interventions, 1), "var(--accent)", "Found no fraud", `${(100 * L.n / Math.max(P.interventions, 1)).toFixed(1)}%`, `${fmtInt(L.n)} of ${fmtInt(P.interventions)} interventions`)}
+            ${ring(F.caught / Math.max(F.total, 1), "var(--fraud)", "Fraud caught", `${(100 * F.caught / Math.max(F.total, 1)).toFixed(1)}%`, `${fmtInt(F.caught)} of ${fmtInt(F.total)} cases`)}
+          </section>
+        </div>
       </div>
-      ${bannerSection()}
       <div class="home-grid">
         ${gridSection(P)}
         <section class="card">
