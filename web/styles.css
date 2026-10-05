@@ -136,8 +136,11 @@ main { max-width: 1440px; margin: 0 auto; padding: 12px 32px 32px; outline: none
 .kpi.hl .label, .kpi.hl .sub { color: rgba(255, 255, 255, .85); }
 .kpi.hl .value { color: #fff; }
 .kpi.hl .delta { background: rgba(255, 255, 255, .22); color: #fff; }
-.guardrail { font-size: 12px; color: var(--ink-2); margin: 10px 2px 16px; }
-.guardrail b { color: var(--drama); }
+.fraud-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 14px 0 16px; }
+.kpi.fraud { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 18px; align-items: center; padding: 12px 18px; }
+.kpi.fraud .label { grid-column: 1 / -1; }
+.kpi.fraud .value { font-size: 22px; color: var(--drama); margin: 2px 0 0; }
+.kpi.fraud .delta { background: var(--drama-wash); color: var(--drama); }
 
 .banner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 28px; align-items: center; margin-bottom: 16px; }
 .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--accent-ink); }
@@ -243,8 +246,8 @@ details.calc[open] summary h2::before, details.more[open] summary h2::before { t
 .rule-item[aria-current="true"] { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--accent); }
 .rule-item[aria-current="true"] .rid { color: var(--accent-ink); font-weight: 700; }
 .rule-item .rid { font-size: 12.5px; font-weight: 600; overflow-wrap: anywhere; }
-.rule-item .rmeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.rule-item .rcount { font-size: 11px; color: var(--muted); }
+.rule-item .rmeta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 8px; }
+.rule-item .rcount { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .rule-item .tag { font-size: 10.5px; padding: 0 7px; }
 .rule-list .foot { padding: 14px 18px 16px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--border); }
 .rule-mid { display: grid; gap: 16px; min-width: 0; }
@@ -316,7 +319,7 @@ svg .axis { stroke: var(--border-strong); stroke-width: 1; }
   .topbar > .tag { display: none; }
   .nav a { padding: 7px 9px; }
   .nav { margin-left: 0; }
-  .kpis { grid-template-columns: minmax(0, 1fr); }
+  .kpis, .fraud-kpis { grid-template-columns: minmax(0, 1fr); }
   .glance, .glance-bottom { grid-template-columns: minmax(0, 1fr); }
   .glance > div { padding: 0; border-left: 0; }
   h1 { font-size: 22px; }

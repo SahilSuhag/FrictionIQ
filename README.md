@@ -46,9 +46,9 @@ sits behind a disclosure (**Details**, **How it's calculated**, **Method and suc
 
 | Screen | Answers | What's on it |
 |---|---|---|
-| **Home** (portfolio) | How big is this, and where do I look first? | Four headline numbers with the change against the previous window (interventions, payouts held or denied, good clients with heavy friction, friction free to remove), and fraud caught beneath for balance; one key finding, the 12-month trend and the rule behind it; every client plotted by friction score against good-client band, with the "good clients, heavy friction" quadrant shaded and the A–F counts as its legend; good clients to look at first; one table of the rules causing the most friction (interventions, payouts held or denied, interventions per fraud case caught, free stretch), with the worst in each column highlighted |
+| **Home** (portfolio) | How big is this, and where do I look first? | Four headline numbers with the change against the previous window (interventions, payouts held or denied, good clients with heavy friction, friction safe to remove), and beneath them two fraud metrics, **fraud saved** and **fraud loss**; one key finding, the 12-month trend and the rule behind it; every client plotted by friction score against good-client band, with the "good clients, heavy friction" quadrant shaded and the A–F counts as its legend; good clients to look at first; one table of the rules causing the most friction (interventions, fraud cases caught, their ratio, payouts held or denied, room to relax), with the highest ratio and the costliest rule highlighted |
 | **Client friction detail** | Is this good client being over-challenged, and by which rule? | One-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); time waiting on their money; payouts denied; share from the top rule; percentile among similar clients; one timeline lane per rule; intervention log with the points each intervention adds and the total; good-client evidence; "why this rule keeps firing" plot; how the score is calculated, collapsed until asked for |
-| **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Rule list with free-stretch tags; the curve (friction removed as a band across weightings, fraud still caught as a line, free stretch shaded and named); a threshold slider aligned under the x-axis (or type a value); three numbers against today (interventions removed, payouts no longer held or denied, fraud still caught); the plain-language sentence; a shadow-test proposal you can draft and copy. **Details** holds the full dollar ledger, the option to apply the change only to established high-friction clients, and the method |
+| **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Rule list with room-to-relax tags; the curve (friction removed as a band across weightings, fraud still caught as a line, the safe range shaded and named); a threshold slider aligned under the x-axis (or type a value); three numbers against today (interventions removed, payouts no longer held or denied, fraud still caught); the plain-language sentence; a shadow-test proposal you can draft and copy. **Details** holds the full dollar ledger, the option to apply the change only to established high-friction clients, and the method |
 
 ## Friction, counted (the differentiator)
 
@@ -58,11 +58,17 @@ compiles it in two ways that appear throughout the screens:
 - **Measured units, no weights.** The headline numbers on Home are built from the logged rule
   hits alone: interventions, legitimate payouts held or denied ($, with client-days waiting in
   the hover), and friction that can be removed at no fraud cost, each against the previous
-  window, with fraud caught alongside for balance. The full ledger (interventions that found no
+  window. Two fraud metrics sit beneath them, also against the previous window:
+  - **Fraud saved**: confirmed fraud a live rule denied or held, in payout dollars, with the
+    count of cases ($165k, 95 of 103 cases).
+  - **Fraud loss**: confirmed fraud no live rule stopped ($2,469, 8 cases).
+
+  Together they make up all confirmed fraud in the window. Cases with no payout amount, such as
+  boarding fraud, count as cases but add no dollars. The full ledger (interventions that found no
   fraud, payouts held and denied, client-days waiting, ops review hours, fraud caught) is under
   **Details → Counting in dollars** on each rule page, comparing today with the selected
-  threshold. It includes the rule's interventions per fraud case caught, and legitimate dollars
-  held or denied per fraud dollar stopped. Review time assumes 30 minutes per hold (the PRD says
+  threshold. It includes the rule's ratio of interventions to fraud cases caught, and legitimate
+  dollars held or denied per fraud dollar stopped. Review time assumes 30 minutes per hold (the PRD says
   20–40).
 - **The friction score**, a weighted index for ranking clients. Each client's intervention log
   has a **Points** column that adds up to the score; hover a value for decision weight ×
@@ -74,14 +80,18 @@ The **key finding** on Home and the highlights in its rule table are computed, n
 hand:
 
 - **Key finding:** the 12-month series, and the rule whose launch drove the latest change.
-- **Rule table:** the costliest rule in dollars and the least efficient (most interventions per
-  fraud case caught) are highlighted.
+- **Rule table:** each rule's interventions, the fraud cases it caught and the ratio between
+  them. The higher the ratio, the more good clients the rule interrupts for each fraud case, so
+  the more room there may be to tune it; the **Room to relax** tag says whether it can be
+  loosened without missing fraud. The highest ratio and the costliest rule in dollars are
+  highlighted. A fraud case can trip more than one rule, so the fraud column adds up to more
+  than fraud saved.
 
 On seed 4127:
 - Friction more than doubled after `payout_limit_100` went live: 489 a month on average, then
   1,170 in the last 30 days.
-- `velocity_check` and `payout_limit_100` interrupt clients 19–20 times per fraud case caught.
-  `payout_velocity_24h` does it 1.4 times.
+- `velocity_check` (21 : 1) and `payout_limit_100` (19 : 1) intervene about 20 times per fraud case
+  caught; both are safe to relax. `payout_velocity_24h` runs at 2.2 : 1 and should be kept as is.
 - Counted in dollars, `new_counterparty` costs the most: $1.11M of legitimate payouts held, from
   only 43 interventions on large bulk payouts. It ranks 5th by count.
 
@@ -95,8 +105,8 @@ On seed 4127:
    about $150, while fraud starts at about $1,900.
 3. **Open rule tradeoff.** The slider opens at $500: *"Raising payout_limit_100 from $100 to $500
    removes 588 interventions from 137 clients a month, and catches the same 38 fraud cases."* The
-   free stretch runs to $1,800. Acme goes from 7 interventions to 0.
-4. **Pick `boarding_doc_mismatch`.** It has no free stretch: the first step already misses fraud.
+   rule is safe to relax to $1,800. Acme goes from 7 interventions to 0.
+4. **Pick `boarding_doc_mismatch`.** It is tagged "Keep as is": the first step already misses fraud.
    This is the honest beat, because some rules earn their friction.
 5. **In reserve for Q&A:** Northwind Payfac is the guardrail. It is graded F, but it has 2
    confirmed fraud cases, so the tool recommends nothing for it.
@@ -105,16 +115,17 @@ On seed 4127:
 
 | Measure | Baseline | Result |
 |---|---|---|
-| Fraud caught and missed | 95 caught, 8 missed of 103 | 95 caught after relaxing every rule to the end of its free stretch (unchanged) |
-| Friction removed at zero capture cost | 0 (not measured today) | **917 interventions from 227 clients**, free or small free stretch on 7 rules |
+| Fraud caught and missed | 95 caught, 8 missed of 103 | 95 caught after relaxing every rule as far as is safe (unchanged) |
+| Friction removed at zero capture cost | 0 (not measured today) | **917 interventions from 227 clients**, from the 7 rules tagged "Safe to relax" or "Little to gain" |
 | Challenge reduction, established band | current thresholds | established-band friction cut median **81% (80–82%) across 300 weightings** |
 | Clients above the high-friction line | 78 | 10; **no client's friction rises** |
-| Range width across weightings | n/a | widest free-stretch spread is 15.6 percentage points |
-| Rules with no free stretch | unknown | `boarding_doc_mismatch`, `payout_velocity_24h`, `device_change_payout` |
+| Range width across weightings | n/a | widest spread in a safe range is 15.6 percentage points |
+| Rules to keep as is (relaxing misses fraud) | unknown | `boarding_doc_mismatch`, `payout_velocity_24h`, `device_change_payout` |
 
-The free-stretch labels match the designs in every window. That includes "Free to $1,800",
-"Free to 4×", "Free to 18%", "Small free stretch" for `new_counterparty` and `geo_mismatch`, and
-"No free stretch" for the three rules above.
+The room-to-relax tags match the designs in every window. The designs called them a "free
+stretch"; the screens now word them as actions. "Free to $1,800", "Free to 4×" and "Free to 18%"
+read "Safe to relax to …"; "Small free stretch" (`new_counterparty`, `geo_mismatch`) reads "Little
+to gain"; "No free stretch" (the three rules above) reads "Keep as is".
 
 `out/frictioniq-summary.json` holds the 30-day results in the same shape as the designers'
 [`data/frictioniq-mock.json`](data/frictioniq-mock.json), so the Figma placeholders can be swapped
@@ -180,15 +191,15 @@ string edit. At each step the sweep:
 - recomputes friction under all 301 weightings
 - counts fraud caught across the whole population
 
-The **free stretch** is the furthest threshold at which the rule still catches every fraud case it
-catches today. The labels work like this:
+A rule's **safe range** runs from today's threshold to the furthest threshold at which the rule
+still catches every fraud case it catches today. Its **Room to relax** tag works like this:
 
-- **"Free to X"**: the free stretch removes at least 30% of the rule's friction under 95% of
-  weightings.
-- **"Small free stretch"**: it removes at least 5%.
-- **"No free stretch"**: anything less.
+- **"Safe to relax to X"**: the safe range removes at least 30% of the rule's friction under 95%
+  of weightings.
+- **"Little to gain"**: it removes at least 5%.
+- **"Keep as is"**: anything less. Usually the first step looser already misses fraud.
 
-The slider opens at the first round setting inside the free stretch that removes 80% of the
+The slider opens at the first round setting inside the safe range that removes 80% of the
 rule's friction. For `payout_limit_100` that is $500. The sweep is **relaxation only**, so every
 counterfactual hit keeps its measured timestamps.
 
@@ -235,7 +246,7 @@ tests/        PRD scenarios, design labels, invariants
   against 20–50k, and 1,146 fraud cases against 150–400. Friction events are 7,621, inside 4–8k.
   The 30-day window is what the screens show: 1,265 interventions and 103 fraud cases.
 - **Figures differ from the mock.** The mock's values were placeholders. The *shapes* match: Acme's
-  log, "3 → 9", ~2 days waiting, 5 payouts denied, the free-stretch labels, and $500 removing
+  log, "3 → 9", ~2 days waiting, 5 payouts denied, the room-to-relax tags, and $500 removing
   about 80% at no fraud cost. The *numbers* come from the generator: 1,265 interventions rather
   than 3,570, and 38 fraud cases on the hero rule rather than 148. Acme grades E (C–F across
   weightings) at the 86th percentile of 75 similar clients, rather than F at the 96th.
@@ -244,7 +255,7 @@ tests/        PRD scenarios, design labels, invariants
   it grades A, and it doesn't make that list. The incident shows as a tag and a note on its client
   screen.
 - **Controlled edge cases.** Every 15 days, each fraud type places one case just past the point
-  where its rule's free stretch should end. The PRD calls for fraud labels "from controlled
+  where its rule's safe range should end. The PRD calls for fraud labels "from controlled
   scenarios". Without these, a 30-day window holds so few cases per rule that the labels would
   depend on luck.
 - **Blind generation was not achieved.** The generator and the analysis were written in the same

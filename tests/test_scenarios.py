@@ -19,7 +19,8 @@ from generator import generate
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Free-stretch labels from the screen designs (frictioniq-mock.json).
+# Labels from the screen designs (frictioniq-mock.json), in the mock's wording. The screens
+# now word them as `shown()` does; the verdicts and values are unchanged.
 DESIGN_LABELS = {
     "payout_limit_100": "Free to $1,800",
     "velocity_check": "Free to 4×",
@@ -30,6 +31,13 @@ DESIGN_LABELS = {
     "refund_ratio_30d": "Free to 18%",
     "device_change_payout": "No free stretch",
 }
+
+
+def shown(design_label: str) -> str:
+    """The mock's label as the screens word it."""
+    if design_label.startswith("Free to "):
+        return "Safe to relax to " + design_label[len("Free to "):]
+    return {"Small free stretch": "Little to gain", "No free stretch": "Keep as is"}[design_label]
 
 
 @pytest.fixture(scope="session")
@@ -72,7 +80,7 @@ def test_1_hero_one_rule_causes_most_friction_and_relaxing_it_is_free(world):
 
     hero = rules["payout_limit_100"]
     c = hero["windows"]["30d"]["curve"]
-    assert c["label"] == "Free to $1,800"
+    assert c["label"] == "Safe to relax to $1,800"
     i500 = hero["grid"].index(500)
     assert c["recommended_index"] == i500
     assert c["points"][i500]["fraud_caught_rule"] == c["base_fraud_caught_rule"]
@@ -145,7 +153,7 @@ def test_7_negative_finding_rule_earning_its_friction(world):
     assert clients["HALC-1190"]["band"] == "established"
     for wkey in ("30d", "60d", "1y"):
         c = rules["boarding_doc_mismatch"]["windows"][wkey]["curve"]
-        assert c["label"] == "No free stretch"
+        assert c["label"] == "Keep as is"
         assert c["points"][2]["fraud_caught_rule"] < c["base_fraud_caught_rule"]
 
 
@@ -155,7 +163,7 @@ def test_7_negative_finding_rule_earning_its_friction(world):
 def test_rule_labels_match_the_screen_designs(world, wkey):
     *_, rules = world
     got = {rid: rules[rid]["windows"][wkey]["curve"]["label"] for rid in DESIGN_LABELS}
-    assert got == DESIGN_LABELS
+    assert got == {rid: shown(label) for rid, label in DESIGN_LABELS.items()}
 
 
 def test_rule_list_leads_with_the_hero_rule(world):
@@ -274,6 +282,20 @@ def test_ledger_counts_match_the_interventions(world):
     assert flat["ledger"]["held_usd"] + flat["ledger"]["denied_usd"] < first["ledger"]["held_usd"] + first["ledger"]["denied_usd"]
     assert flat["freed"]["usd"] > 0 and flat["fraud_usd_rule"] == first["fraud_usd_rule"]
 
+
+
+@pytest.mark.parametrize("wkey", ["30d", "60d", "1y"])
+def test_fraud_saved_and_lost_add_up_to_all_fraud(world, wkey):
+    _, _, res, _, rules = world
+    p = res["portfolio"][wkey]
+    for f in [p["fraud"]] + ([p["prev"]["fraud"]] if p["prev"] else []):
+        assert 0 < f["caught"] <= f["total"]
+        assert f["caught_usd"] + f["lost_usd"] == f["total_usd"]
+    assert p["fraud"]["caught"] == res["metrics"][wkey]["fraud"]["caught"]
+    # the ratio's numerator on Home and on the rule page is the same count
+    for r in rules.values():
+        w = r["windows"][wkey]
+        assert w["curve"]["points"][0]["rule_interventions_all"] == w["interventions"]
 
 def test_trend_shows_the_hero_rule_launch(world):
     _, _, res, _, _ = world

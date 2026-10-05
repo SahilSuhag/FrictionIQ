@@ -149,7 +149,11 @@
     nofraud: () => `<b>Found no fraud</b><br>The event the rule stopped was never confirmed as fraud. These are the interruptions legitimate business paid for.`,
     review: () => `<b>Ops review time</b><br>Every hold becomes a manual review. This assumes 30 minutes each; the PRD's taxonomy puts it at 20–40.`,
     removed: () => `<b>Friction removed</b><br>The fall in friction score, summed over every client, as a share of what this rule causes today. It is a band because the weights are placeholders: ${NW} weightings with the same ordering were tried.`,
-    perfraud: () => `<b>Interventions per fraud case caught</b><br>Interventions that found no fraud, divided by the fraud cases this rule caught in the same window. Lower is better: the rule is paying for its friction.`,
+    perfraud: () => `<b>Ratio: interventions per fraud case</b><br>The rule's interventions divided by the fraud cases it caught. 20 : 1 means it intervened 20 times for each fraud case it caught, so most of its interventions landed on good clients. The higher the ratio, the more room there may be to tune the rule. Its <i>Room to relax</i> tag says whether it can be loosened without missing fraud.`,
+    fraudcases: () => `<b>Fraud cases caught</b><br>Confirmed fraud cases this rule fired on. One case can trip more than one rule, so this column adds up to more than the fraud saved total.`,
+    saved: () => `<b>Fraud saved</b><br>Confirmed fraud that a live rule denied or held before the money left, in payout dollars, across every client. Cases with no payout amount, such as boarding fraud, count as cases but add no dollars.`,
+    lost: () => `<b>Fraud loss</b><br>Confirmed fraud that no live rule stopped, in payout dollars, across every client. Fraud saved and fraud loss together make up all confirmed fraud in the window.`,
+    relax: () => { const fs = D.config.free_stretch; return `<b>Room to relax</b><br>How far a rule's threshold can be loosened without missing any fraud it catches today.<br><b>Safe to relax to …</b> Loosening it that far catches the same fraud and removes at least ${fs.free_pct}% of the rule's friction (under 95% of the weightings tried).<br><b>Little to gain</b> It can be loosened a little without missing fraud, but that removes less than ${fs.free_pct}% of its friction.<br><b>Keep as is</b> The first step looser already misses fraud: the rule earns its friction.`; },
   };
   const info = (key, label) => `<button type="button" class="info" data-info="${key}" aria-label="${label || "How this is calculated"}">i</button>`;
   function wireInfo(root) {
@@ -253,7 +257,8 @@
       const d = (100 * (now - before)) / before;
       return `<span class="delta" title="vs previous ${W().label}">${d >= 0 ? "▲" : "▼"} ${pct(Math.abs(d))}</span>`;
     };
-    const kpi = (label, value, sub, extra, hl) => `<div class="card kpi${hl ? " hl" : ""}"><div class="label">${label}${extra || ""}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+    const kpi = (label, value, sub, extra, cls) => `<div class="card kpi${cls ? " " + cls : ""}"><div class="label">${label}${extra || ""}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+    const FP = prev && prev.fraud;
     const usdNow = L.held_usd + L.denied_usd;
     const usdPrev = prev ? prev.ledger.held_usd + prev.ledger.denied_usd : null;
 
@@ -264,12 +269,15 @@
         ${windowControl()}
       </div>
       <div class="kpis">
-        ${kpi("Interventions", fmtInt(P.interventions), `${pct((100 * L.n) / Math.max(P.interventions, 1))} found no fraud${prev ? ` · ${fmtInt(prev.interventions)} the ${W().days}&nbsp;days before` : ""}`, delta(P.interventions, prev && prev.interventions), true)}
+        ${kpi("Interventions", fmtInt(P.interventions), `${pct((100 * L.n) / Math.max(P.interventions, 1))} found no fraud${prev ? ` · ${fmtInt(prev.interventions)} the ${W().days}&nbsp;days before` : ""}`, delta(P.interventions, prev && prev.interventions), "hl")}
         ${kpi("Payouts held or denied", fmtUsd(usdNow), `${fmtInt(L.wait_days)} client-days waiting on money`, `${delta(usdNow, usdPrev)} ${info("ledger", "About these figures")}`)}
         ${kpi("Good clients, heavy friction", fmtInt(P.good_clients_heavy_friction), `Established band, graded ${HEAVY.join(" or ")}`, ` ${info("score", "How the friction score works")}`)}
-        ${kpi("Free to remove", fmtInt(P.free_to_remove), `interventions · ${fmtUsd(P.freed.usd)} of payouts, fraud caught unchanged`)}
+        ${kpi("Safe to remove", fmtInt(P.free_to_remove), `interventions · ${fmtUsd(P.freed.usd)} of payouts, no fraud lost`, ` ${info("relax", "What counts as safe")}`)}
       </div>
-      <p class="guardrail">For balance: fraud caught <b>${F.caught} of ${F.total}</b> cases (${fmtUsd(F.caught_usd)} of ${fmtUsd(F.total_usd)}), measured on every client.</p>
+      <div class="fraud-kpis">
+        ${kpi("Fraud saved", fmtUsd(F.caught_usd), `${fmtInt(F.caught)} of ${fmtInt(F.total)} fraud cases stopped by the rules`, `${delta(F.caught_usd, FP && FP.caught_usd)} ${info("saved", "What counts as fraud saved")}`, "fraud")}
+        ${kpi("Fraud loss", fmtUsd(F.lost_usd), `${fmtInt(F.total - F.caught)} fraud case${F.total - F.caught === 1 ? "" : "s"} no rule stopped`, `${delta(F.lost_usd, FP && FP.lost_usd)} ${info("lost", "What counts as fraud loss")}`, "fraud")}
+      </div>
       ${bannerSection()}
       <div class="home-grid">
         <section class="card">
@@ -325,20 +333,23 @@
   function ruleTable(P) {
     const stats = Object.fromEntries(P.rules.map((r) => [r.rule_id, r]));
     const rows = rulesByVolume().filter((r) => !r.shadow && r.windows[state.win].interventions > 0);
-    const per = (r) => { const s = stats[r.rule_id]; return s.fraud ? s.n / s.fraud : null; };
+    const fraudOf = (r) => stats[r.rule_id].fraud;
+    const per = (r) => (fraudOf(r) ? r.windows[state.win].interventions / fraudOf(r) : null);
     const usdOf = (r) => stats[r.rule_id].usd;
     const maxUsd = Math.max(...rows.map(usdOf)), maxPer = Math.max(...rows.map((r) => per(r) || 0));
     const maxN = Math.max(...rows.map((r) => r.windows[state.win].interventions));
     return `<section class="card">
-      <div class="card-head"><div><h2>Rules causing the most friction</h2><div class="card-sub">${W().phrase[0].toUpperCase() + W().phrase.slice(1)} · highlighted: the costliest in dollars and the least efficient</div></div></div>
-      <div class="table-scroll"><table class="rule-table"><thead><tr><th>Rule</th><th>Interventions</th><th class="num">Payouts held or denied</th>
-        <th class="num">Per fraud case caught ${info("perfraud")}</th><th>Free stretch</th></tr></thead><tbody>
+      <div class="card-head"><div><h2>Rules causing the most friction</h2><div class="card-sub">${W().phrase[0].toUpperCase() + W().phrase.slice(1)} · highlighted: the highest ratio, where there may be most room to tune, and the costliest in dollars</div></div></div>
+      <div class="table-scroll"><table class="rule-table"><thead><tr><th>Rule</th><th>Interventions</th>
+        <th class="num">Fraud cases caught ${info("fraudcases")}</th><th class="num">Ratio ${info("perfraud")}</th>
+        <th class="num">Payouts held or denied</th><th>Room to relax ${info("relax")}</th></tr></thead><tbody>
       ${rows.map((r, i) => {
         const rw = r.windows[state.win], u = usdOf(r), pr = per(r);
         return `<tr><td><button class="rname${i === 0 ? " top" : ""}" data-rule="${r.rule_id}">${r.rule_id}</button></td>
           <td><div class="inline-bar"><span style="width:${(100 * rw.interventions) / maxN}%" class="${i === 0 ? "top" : ""}"></span><b class="num">${fmtInt(rw.interventions)}</b></div></td>
+          <td class="num">${fmtInt(fraudOf(r))}</td>
+          <td class="num">${pr == null ? '<span class="muted">no fraud caught</span>' : `<span class="${pr === maxPer ? "hl-cell" : ""}">${fmt1(pr)}&nbsp;:&nbsp;1</span>`}</td>
           <td class="num">${u ? `<span class="${u === maxUsd ? "hl-cell" : ""}">${fmtUsd(u)}</span>` : '<span class="muted">—</span>'}</td>
-          <td class="num">${pr == null ? '<span class="muted">—</span>' : `<span class="${pr === maxPer ? "hl-cell" : ""}">${fmt1(pr)}</span>`}</td>
           <td><span class="tag ${tagFor(rw.curve)}">${esc(rw.curve.label)}</span></td></tr>`;
       }).join("")}</tbody></table></div>
     </section>`;
@@ -459,15 +470,15 @@
     const free = M.free_by_rule.filter((r) => r.verdict === "free").length;
     const rows = [
       ["Fraud caught and missed", `${M.fraud.caught} caught, ${M.fraud.missed} missed of ${M.fraud.total}`,
-        `${M.fraud.caught_after_relax_all} caught after relaxing every rule to the end of its free stretch`],
+        `${M.fraud.caught_after_relax_all} caught after relaxing every rule as far as is safe`],
       ["Friction removed at zero capture cost", "0: not measured today",
-        `${fmtInt(ra.interventions_removed)} interventions from ${ra.clients_affected} clients, a free stretch on ${free} rules`],
+        `${fmtInt(ra.interventions_removed)} interventions from ${ra.clients_affected} clients; ${free} rules safe to relax`],
       ["Challenge reduction, established band", "current thresholds",
         `friction cut median ${pct(ra.established_cut_pct[1])} (${pct(ra.established_cut_pct[2])}–${pct(ra.established_cut_pct[3])} across ${NW} weightings)`],
       ["Clients above the high-friction line", `${ra.clients_above_p75_before}`,
         `${ra.clients_above_p75_after} after; ${ra.clients_friction_increased} clients see friction rise; top-decile share ${pct(100 * ra.top_decile_share[0])} → ${pct(100 * ra.top_decile_share[1])}`],
-      ["Range width across weightings", "n/a", `widest free-stretch spread: ${M.range_width_pts} percentage points`],
-      ["Rules with no free stretch", "unknown today", M.no_free_stretch.join(", ") || "none"],
+      ["Range width across weightings", "n/a", `widest spread in the safe range: ${M.range_width_pts} percentage points`],
+      ["Rules to keep as is (relaxing misses fraud)", "unknown today", M.no_free_stretch.join(", ") || "none"],
     ];
     const w = D.config.decision_weights;
     return `<details class="card method" open><summary>Method and success metrics · ${W().phrase}</summary>
@@ -835,7 +846,7 @@
               <span class="rid">${x.rule_id}</span>
               <span class="rmeta"><span class="rcount">${fmtInt(x.windows[state.win].interventions)} interventions</span>
               <span class="tag ${tagFor(x.windows[state.win].curve)}">${esc(x.windows[state.win].curve.label)}</span></span></button>`).join("")}
-          <div class="foot">"Free" = threshold can be relaxed this far without missing any fraud the rule catches today.</div>
+          <div class="foot">Tags: how far each rule can be loosened without missing fraud ${info("relax")}</div>
         </section>
         <div class="rule-mid">
         <section class="card">
@@ -917,7 +928,7 @@
     if (fl > 0) {
       el("rect", { x: xs(0), y: m.t, width: xs(fl) - xs(0), height: ih, fill: "var(--free-wash)" }, svg);
       const fx0 = xs(fl) - xs(0) > 150 ? xs(fl) - 8 : xs(fl) + 8, anchor = xs(fl) - xs(0) > 150 ? "end" : "start";
-      txt(svg, fx0, m.t + ih - 46, "Free stretch", { class: "t-strong", "text-anchor": anchor });
+      txt(svg, fx0, m.t + ih - 46, "Safe to relax", { class: "t-strong", "text-anchor": anchor });
       txt(svg, fx0, m.t + ih - 31, "Fraud caught is unchanged", { class: "t-ink", "text-anchor": anchor });
       txt(svg, fx0, m.t + ih - 16, `all the way to ${fmtVal(r.grid[fl], r.unit)}`, { class: "t-ink", "text-anchor": anchor });
     }
@@ -1059,7 +1070,7 @@
     if (!canTest) {
       ns.innerHTML = `<h2>Next step</h2><p class="why-text">${r.shadow ? "This rule is already a shadow test: its hits show what clients would have paid, without anyone paying." :
         cv.verdict === "none" ? `No relaxation to test: the first step already misses fraud this rule catches. ${r.rule_id} is earning its friction.` :
-        lost > 0 ? `This setting misses fraud. Move the threshold back inside the free stretch (up to ${fmtVal(r.grid[cv.flat_index], r.unit)}) to propose a shadow test.` :
+        lost > 0 ? `This setting misses fraud. Move the threshold back inside the safe range (up to ${fmtVal(r.grid[cv.flat_index], r.unit)}) to propose a shadow test.` :
         "Pick a looser threshold to propose a shadow test."}</p><p class="card-note">Recommendation only. Nothing on this screen changes a live rule.</p>`;
       return;
     }
@@ -1099,8 +1110,8 @@
     add("Ops review hours", A.review_hours, B.review_hours, fmtInt, "review", A.reviews > 0);
     rows.push(`<tr class="sep"><td>Fraud caught by this rule</td><td class="num">${a.fraud_caught_rule} <span class="muted">(${fmtUsd(a.fraud_usd_rule || 0)})</span></td><td class="num">${b.fraud_caught_rule} <span class="muted">(${fmtUsd(b.fraud_usd_rule || 0)})</span></td><td class="num delta">${sign(b.fraud_caught_rule - a.fraud_caught_rule, fmtInt)}</td></tr>`);
     if (a.fraud_caught_rule) {
-      const ra = A.n / a.fraud_caught_rule, rb = b.fraud_caught_rule ? B.n / b.fraud_caught_rule : null;
-      rows.push(`<tr><td>Interventions per fraud case caught ${info("perfraud")}</td><td class="num">${fmt1(ra)}</td><td class="num">${rb == null ? "—" : fmt1(rb)}</td><td class="num delta"></td></tr>`);
+      const ra = a.rule_interventions_all / a.fraud_caught_rule, rb = b.fraud_caught_rule ? b.rule_interventions_all / b.fraud_caught_rule : null;
+      rows.push(`<tr><td>Ratio: interventions per fraud case ${info("perfraud")}</td><td class="num">${fmt1(ra)} : 1</td><td class="num">${rb == null ? "—" : fmt1(rb) + " : 1"}</td><td class="num delta"></td></tr>`);
       const la = A.denied_usd + A.held_usd, lb = B.denied_usd + B.held_usd;
       if (la && a.fraud_usd_rule) rows.push(`<tr><td>Legitimate dollars held or denied per fraud dollar stopped</td><td class="num">$${(la / a.fraud_usd_rule).toFixed(2)}</td><td class="num">${b.fraud_usd_rule ? "$" + (lb / b.fraud_usd_rule).toFixed(2) : "—"}</td><td class="num delta"></td></tr>`);
     }

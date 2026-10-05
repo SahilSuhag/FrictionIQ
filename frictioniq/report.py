@@ -41,6 +41,7 @@ def grade_of(score: float, cfg: dict) -> str:
 def _compact_point(p: dict) -> dict:
     keep = ("interventions_removed", "clients_affected", "established_clients_affected", "fraud_caught_rule",
             "fraud_caught_ruleset", "clients_above_p75", "clients_friction_increased", "rule_interventions",
+            "rule_interventions_all",
             "example_interventions", "interventions_reattributed")
     out = {k: p[k] for k in keep if k in p}
     for k in ("ledger", "freed", "fraud_usd_rule"):
@@ -114,7 +115,7 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                     "baseline": curve["points"][0].get("example_interventions", 0)},
             }
 
-        # ---------------------------------------- every free stretch at once
+        # ---------------------------------------- every rule relaxed as far as is safe, at once
         relax = [r for r in ds.rules if curves[r.rule_id]["verdict"] in ("free", "small")]
         removed_all = np.zeros(ds.n_hits, dtype=bool)
         for r in relax:
@@ -200,16 +201,25 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                 out[k] = out.get(k, 0) + 1
             return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
-        fraud_w = ds.event_fraud & (ds.event_t >= ds.as_of - days * 24)
-        caught_ev = np.unique(ds.hit_event[base.prevailing & ds.hit_fraud & wb["mask"]])
         amt_ev = np.nan_to_num(ds.features["amount"])
+
+        def fraud_split(start, end):
+            """Confirmed fraud in [start, end): stopped by a live rule (saved) or not (lost)."""
+            ev = ds.event_fraud & (ds.event_t >= start) & (ds.event_t < end)
+            caught = np.unique(ds.hit_event[base.prevailing & ds.hit_fraud & (ds.hit_t >= start) & (ds.hit_t < end)])
+            caught = caught[ev[caught]]
+            total_usd = amt_ev[ev].sum()
+            return {"caught": int(caught.size), "total": int(ev.sum()), "caught_usd": _r(amt_ev[caught].sum(), 0),
+                    "total_usd": _r(total_usd, 0), "lost_usd": _r(total_usd - amt_ev[caught].sum(), 0)}
+
+        start = ds.as_of - days * 24
         portfolio[wkey] = {
             "ledger": sweep.ledger(ds, prev_w & legit, amount),
-            "fraud": {"caught": int(caught_ev.size), "total": int(fraud_w.sum()),
-                      "caught_usd": _r(amt_ev[caught_ev].sum(), 0), "total_usd": _r(amt_ev[fraud_w].sum(), 0)},
+            "fraud": fraud_split(start, ds.as_of + 1),
             "freed": ra["freed"],
             # the previous window of the same length, for "vs previous period" comparisons
             "prev": None if ds.as_of - 2 * days * 24 < 0 else {
+                "fraud": fraud_split(start - days * 24, start),
                 "interventions": int((base.prevailing & (ds.hit_t >= ds.as_of - 2 * days * 24) & ~wb["mask"]).sum()),
                 "ledger": sweep.ledger(ds, base.prevailing & legit & (ds.hit_t >= ds.as_of - 2 * days * 24) & ~wb["mask"], amount),
             },

@@ -33,9 +33,9 @@ def main(argv=None):
     for r in m["free_by_rule"]:
         print(f"  {r['rule_id']:<24} {r['label']:<22} {r['expression']:<34} removes {r['interventions_removed']:>4}")
     ra = m["relax_all"]
-    print(f"every free stretch at once: {ra['interventions_removed']} interventions removed from "
+    print(f"every rule relaxed as far as is safe, at once: {ra['interventions_removed']} interventions removed from "
           f"{ra['clients_affected']} clients; fraud caught {m['fraud']['caught_after_relax_all']} of {m['fraud']['total']}")
-    print(f"no free stretch: {', '.join(m['no_free_stretch']) or 'none'}")
+    print(f"keep as is (relaxing misses fraud): {', '.join(m['no_free_stretch']) or 'none'}")
 
 
 if __name__ == "__main__":

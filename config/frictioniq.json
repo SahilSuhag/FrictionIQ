@@ -101,7 +101,7 @@
     ]
   },
   "free_stretch": {
-    "_comment": "Labels for a rule's free stretch: 'Free to X' when, under 95% of weightings, it removes at least `free_pct` of the rule's friction; 'Small free stretch' when it removes at least `small_pct`; otherwise 'No free stretch'.",
+    "_comment": "Labels for how far a rule can be relaxed without missing fraud it catches today (its safe range): 'Safe to relax to X' when, under 95% of weightings, the safe range removes at least `free_pct` of the rule's friction; 'Little to gain' when it removes at least `small_pct`; otherwise 'Keep as is'.",
     "free_pct": 30,
     "small_pct": 5,
     "recommend_pct": 80

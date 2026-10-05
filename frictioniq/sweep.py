@@ -232,6 +232,7 @@ class Sweeper:
                 pct = np.where(rule_base > 0, 100 * removed_friction / rule_base, 0.0)
             out["pct_of_rule"] = _ranges(pct)
             out["rule_interventions"] = int((prev & self.legit & self.win & r_mask).sum())
+            out["rule_interventions_all"] = int((prev & self.win & r_mask).sum())
         if detail:
             out["_prevailing"] = prev
             out["_client"] = client_now
@@ -267,17 +268,17 @@ class Sweeper:
         legit_base = int((self.base.prevailing & r_mask & self.legit & self.win).sum())
         fp = points[flat]["pct_of_rule"]
         if rule.shadow:
-            verdict, label = "shadow", "Shadow: no friction"
+            verdict, label = "shadow", "Shadow only"
         elif legit_base == 0:
             verdict, label = "no_legit_friction", "No client friction"
         elif base_caught == 0:
             verdict, label = "no_fraud", "Caught no fraud here"
         elif flat >= 1 and fp["p5"] >= cfg["free_pct"]:
-            verdict, label = "free", f"Free to {fmt(grid[flat], unit)}"
+            verdict, label = "free", f"Safe to relax to {fmt(grid[flat], unit)}"
         elif flat >= 1 and fp["ref"] >= cfg["small_pct"]:
-            verdict, label = "small", "Small free stretch"
+            verdict, label = "small", "Little to gain"
         else:
-            verdict, label = "none", "No free stretch"
+            verdict, label = "none", "Keep as is"
 
         # Where the slider opens: the first round setting inside the free stretch that
         # removes most of the rule's friction; for a rule with no free stretch, a step or
