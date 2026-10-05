@@ -6,7 +6,7 @@ import csv
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
@@ -15,6 +15,7 @@ from contract import expression, schema
 _EPOCH = datetime.strptime(schema.WINDOW_START, schema.TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
 AS_OF_HOURS = (datetime.strptime(schema.WINDOW_END, schema.TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
                - _EPOCH).total_seconds() / 3600.0
+PAYOUT_REQUESTS = {"PAYOUT", "INSTANT_PAYOUT", "BULK_PAYOUT"}
 
 
 def hours(ts: str) -> float:
@@ -23,7 +24,6 @@ def hours(ts: str) -> float:
 
 
 def iso(h: float) -> str:
-    from datetime import timedelta
     return (_EPOCH + timedelta(hours=float(h))).strftime(schema.TIMESTAMP_FORMAT)
 
 
@@ -48,10 +48,13 @@ class Rule:
     checkpoint: str
     order: int
     ruleset_id: str
+    description: str
+    live_since: str
+    live_from: float          # hours since WINDOW_START
 
     @property
-    def rank(self) -> int:
-        return schema.DECISION_RANK[self.decision]
+    def requests(self) -> set[str] | None:
+        return schema.request_types(self.request_type)
 
 
 class Dataset:
@@ -68,6 +71,7 @@ class Dataset:
         self.client_index = {c["client_id"]: i for i, c in enumerate(self.clients)}
         self.n_clients = len(self.clients)
         self.client_entity = np.array([c["entity"] for c in self.clients])
+        self.client_segment = np.array([c["segment"] for c in self.clients])
 
         # --- rules and bindings
         bindings = {b["rule_id"]: b for b in _read(os.path.join(data_dir, "ruleset_bindings.csv"))}
@@ -77,7 +81,8 @@ class Dataset:
             self.rules.append(Rule(i, r["rule_id"], r["rule_name"], r["entity"], r["request_type"], r["category"],
                                    r["sub_category"], r["decision"], r["rule_expression"],
                                    expression.parse(r["rule_expression"]), r["shadow_setting"] == "ON",
-                                   b["checkpoint"], int(b["order"]), b["ruleset_id"]))
+                                   b["checkpoint"], int(b["order"]), b["ruleset_id"], r["description"],
+                                   r["live_since"], hours(r["live_since"] + "T00:00:00Z")))
         self.rule_index = {r.rule_id: r.idx for r in self.rules}
 
         # --- decision events
@@ -89,18 +94,26 @@ class Dataset:
         self.event_checkpoint = np.array([e["checkpoint"] for e in ev])
         self.event_request = np.array([e["request_type"] for e in ev])
         self.event_t = np.array([hours(e["occurred_at"]) for e in ev])
+        self.event_is_payout = np.isin(self.event_request, list(PAYOUT_REQUESTS))
         self.features = {
             f: np.array([float(e[f]) if e[f] != "" else np.nan for e in ev]) for f in schema.FEATURES
         }
+        del ev
 
         # --- fraud labels (the capture guardrail)
         self.fraud_cases = _read(os.path.join(data_dir, "fraud_cases.csv"))
         self.event_fraud = np.zeros(self.n_events, dtype=bool)
-        for fc in self.fraud_cases:
-            self.event_fraud[self.event_index[fc["event_id"]]] = True
         self.client_fraud_count = np.zeros(self.n_clients, dtype=np.int32)
         for fc in self.fraud_cases:
+            self.event_fraud[self.event_index[fc["event_id"]]] = True
             self.client_fraud_count[self.client_index[fc["client_id"]]] += 1
+
+        # --- disputes (account standing)
+        self.client_disputes = np.zeros(self.n_clients, dtype=np.int32)
+        path = os.path.join(data_dir, "disputes.csv")
+        if os.path.exists(path):
+            for d in _read(path):
+                self.client_disputes[self.client_index[d["client_id"]]] += 1
 
         # --- rule hits
         hits = _read(os.path.join(data_dir, "rule_hits.csv"))
@@ -115,17 +128,20 @@ class Dataset:
         self.hit_final = np.array([h["final_decision"] for h in hits])
         self.hit_action = np.array([h["action_taken"] for h in hits])
 
-        rank = np.array([r.rank for r in self.rules])
+        # The intervention each hit applies: a DENY_OR_HOLD rule denies an instant payout
+        # and holds anything else. The friction weight comes straight from it.
+        self.hit_decision = np.array([schema.resolve_decision(self.rules[r].decision, self.event_request[e])
+                                      for r, e in zip(self.hit_rule, self.hit_event)])
+        self.hit_rank = np.array([schema.DECISION_RANK[d] for d in self.hit_decision])
         order = np.array([r.order for r in self.rules])
         shadow = np.array([r.shadow for r in self.rules])
-        self.hit_rank = rank[self.hit_rule]
         self.hit_order = order[self.hit_rule]
         self.hit_shadow = shadow[self.hit_rule]
         # Downstream override is a fact about what happened, not something the analysis
         # can re-derive, so it is read from the log.
         self.hit_overridden = self.hit_action == "OVERRIDDEN"
         self.hit_live = ~self.hit_shadow & ~self.hit_overridden
-        self.hit_is_hold = np.array([self.rules[i].decision == "HOLD" for i in self.hit_rule])
+        self.hit_is_hold = self.hit_decision == "HOLD"
         self.hit_fraud = self.event_fraud[self.hit_event]
 
         # --- incidents
@@ -139,10 +155,10 @@ class Dataset:
 
     # ------------------------------------------------------------------
     def rule_applies(self, rule: Rule) -> np.ndarray:
-        """Events a rule is evaluated on: its checkpoint, request type and client entity."""
-        mask = self.event_checkpoint == rule.checkpoint
-        if rule.request_type != "*":
-            mask &= self.event_request == rule.request_type
+        """Events a rule is evaluated on: its checkpoint, request types, client entity, live date."""
+        mask = (self.event_checkpoint == rule.checkpoint) & (self.event_t >= rule.live_from)
+        if rule.requests is not None:
+            mask &= np.isin(self.event_request, list(rule.requests))
         if rule.entity != "ALL":
             mask &= self.client_entity[self.event_client] == rule.entity
         return mask

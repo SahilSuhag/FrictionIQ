@@ -52,16 +52,19 @@ def placeholder(cfg: dict) -> Weightings:
 def sample_weightings(cfg: dict) -> Weightings:
     """Anchor A: sample weight vectors consistent with the intervention ordering.
 
-    Six uniform draws, sorted, scaled so the heaviest (termination) is 100 — every
-    vector respects settlement limit < restriction < hold < deny < block < termination
-    and nothing else is assumed. Half-life, reference hours and duration shape are
-    swept alongside, because they are as arbitrary as the weights.
+    Six uniform draws, sorted, so every vector respects settlement limit < restriction
+    < hold < deny < block < termination and nothing else is assumed. The score has no
+    natural unit, so each vector is scaled to put a hold at 25, the placeholder value:
+    the sample then spreads around the placeholder instead of sitting above it.
+    Half-life, reference hours and duration shape are swept alongside, because they
+    are as arbitrary as the weights.
     """
     sw = cfg["weighting_sweep"]
     rng = np.random.default_rng(sw["seed"])
     n = sw["n_samples"]
     u = np.sort(rng.uniform(0.02, 1.0, size=(n, len(RANKED_DECISIONS))), axis=1)
-    u = 100.0 * u / u[:, -1:]
+    hold = RANKED_DECISIONS.index("HOLD")
+    u = cfg["decision_weights"]["HOLD"] * u / u[:, hold:hold + 1]
     base = placeholder(cfg)
     weights = np.vstack([base.weights, np.hstack([np.zeros((n, 1)), u])])
     lo, hi = sw["half_life_days"]
@@ -146,24 +149,28 @@ class Baseline:
     w: Weightings
     F: np.ndarray               # H x S
     prevailing: np.ndarray      # H mask
-    windows: dict               # days -> {"rule": C x S, "incident": C x S, "count": C}
-    incident_detail: list
+    windows: dict               # days -> {"mask": H, "rule": C x S, "incident": C x S, "count": C, "prev_count": C}
+    incident_detail: dict       # days -> per-client list of (incident_id, hours, friction)
 
 
-def baseline(ds: Dataset, w: Weightings, windows=(7, 30)) -> Baseline:
+def baseline(ds: Dataset, w: Weightings, windows=(30, 60, 365)) -> Baseline:
     F = hit_friction(ds, w)
     prev = prevailing(ds, ds.hit_live)
-    out = {}
-    detail = None
+    out, detail = {}, {}
     for d in windows:
-        in_window = ds.hit_t >= ds.as_of - d * 24
+        start = ds.as_of - d * 24
+        in_window = ds.hit_t >= start
+        in_prev = (ds.hit_t >= start - d * 24) & ~in_window
         m = prev & in_window
         inc, det = incident_friction(ds, w, d)
-        if d == max(windows):
-            detail = det
+        detail[d] = det
         out[d] = {
+            "mask": in_window,
             "rule": client_totals(ds, m, F),
             "incident": inc,
             "count": np.bincount(ds.hit_client[m], minlength=ds.n_clients),
+            # the previous window of the same length; empty before the data starts
+            "prev_count": np.bincount(ds.hit_client[prev & in_prev], minlength=ds.n_clients)
+            if start - d * 24 >= 0 else None,
         }
     return Baseline(w, F, prev, out, detail)

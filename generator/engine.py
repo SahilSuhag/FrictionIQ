@@ -10,16 +10,16 @@ import math
 import random
 
 from contract import expression
-from contract.schema import DECISION_RANK
+from contract.schema import DECISION_RANK, request_types, resolve_decision
 
 from .registry import OVERRIDE_RULES, RULES
-from .world import WINDOW_HOURS, Client, Event
+from .world import WINDOW_HOURS, Client, Event, at
 
-# Median hours to resolve, by decision (lognormal sigma alongside). HOLD medians are
-# per rule because review queues differ.
-HOLD_MEDIAN = {"R02": 18.0, "R03": 1.2, "R06": 6.0, "R09": 2.0}
+# Median hours to resolve. HOLD medians are per rule because review queues differ.
+HOLD_MEDIAN = {"payout_limit_100": 20.0, "new_counterparty": 3.0, "boarding_doc_mismatch": 18.0,
+               "geo_mismatch": 3.0, "refund_ratio_30d": 8.0}
 RESOLVE = {
-    "SETTLEMENT_LIMIT": (72.0, 0.4),
+    "SETTLEMENT_LIMIT": (60.0, 0.4),
     "RESTRICT": (168.0, 0.3),
     "DENY": (20.0, 0.8),
     "BLOCK": (96.0, 0.5),
@@ -29,27 +29,28 @@ RESOLVE = {
 
 class _Rule:
     def __init__(self, row):
-        (self.rule_id, self.name, self.entity, self.request_type, _cat, _sub, self.decision,
-         text, shadow, self.checkpoint, self.order) = row
+        (self.rule_id, self.entity, req, _cat, _sub, self.decision, text, shadow, self.checkpoint,
+         self.order, live_since, _desc) = row
+        self.requests = request_types(req)
         self.expr = expression.parse(text)
         self.shadow = shadow == "ON"
-        self.rank = DECISION_RANK[self.decision]
+        self.live_from = at(live_since, 0)
 
     def applies(self, ev: Event, client: Client) -> bool:
-        if ev.checkpoint != self.checkpoint:
+        if ev.checkpoint != self.checkpoint or ev.t < self.live_from:
             return False
-        if self.request_type != "*" and ev.request_type != self.request_type:
+        if self.requests is not None and ev.request_type not in self.requests:
             return False
         if self.entity != "ALL" and client.entity != self.entity:
             return False
         return self.expr.matches(ev.features.get(self.expr.feature))
 
 
-def _duration(rng: random.Random, rule: _Rule, upheld: bool) -> float:
-    if rule.decision == "HOLD":
-        median, sigma = (30.0 if upheld else HOLD_MEDIAN.get(rule.rule_id, 4.0)), 0.9
+def _duration(rng: random.Random, rule: _Rule, decision: str, upheld: bool) -> float:
+    if decision == "HOLD":
+        median, sigma = (30.0 if upheld else HOLD_MEDIAN.get(rule.rule_id, 4.0)), 0.6
     else:
-        median, sigma = RESOLVE[rule.decision]
+        median, sigma = RESOLVE[decision]
     if median == 0:
         return 0.0
     return rng.lognormvariate(math.log(median), sigma)
@@ -68,6 +69,7 @@ def evaluate(rng: random.Random, clients: dict[str, Client], events: list[Event]
         if not fired:
             continue
 
+        decision = {r.rule_id: resolve_decision(r.decision, ev.request_type) for r in fired}
         status = {}
         for r in fired:
             if r.shadow:
@@ -79,7 +81,7 @@ def evaluate(rng: random.Random, clients: dict[str, Client], events: list[Event]
                 status[r.rule_id] = "LIVE"
 
         live = [r for r in fired if status[r.rule_id] == "LIVE"]
-        prevailing = max(live, key=lambda r: (r.rank, -r.order)) if live else None
+        prevailing = max(live, key=lambda r: (DECISION_RANK[decision[r.rule_id]], -r.order)) if live else None
 
         if prevailing is None:
             final = "NO_ACTION"
@@ -98,7 +100,7 @@ def evaluate(rng: random.Random, clients: dict[str, Client], events: list[Event]
                 if r is prevailing and ev.hold_hours is not None:
                     hours = ev.hold_hours
                 else:
-                    hours = _duration(rng, r, final == "UPHELD")
+                    hours = _duration(rng, r, decision[r.rule_id], final == "UPHELD")
             hours = min(hours, WINDOW_HOURS - ev.t)      # measured up to the as-of
             hits.append({
                 "rule_id": r.rule_id,

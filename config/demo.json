@@ -1,7 +1,8 @@
 {
-  "_comment": "Presentation only: which clients and rules the three-minute demo walks through. The analysis does not read this.",
-  "open_client": "CL-0001",
-  "hero_rule": "R01",
-  "negative_rule": "R02",
-  "guardrail_client": "CL-0003"
+  "_comment": "Presentation only: which clients and rules the three-minute demo walks through. The analysis does not use it to compute anything.",
+  "open_client": "ACME-0417",
+  "hero_rule": "payout_limit_100",
+  "negative_rule": "boarding_doc_mismatch",
+  "guardrail_client": "NORT-7716",
+  "viewer": { "name": "Jordan Lee", "role": "Fraud operations · read-only" }
 }

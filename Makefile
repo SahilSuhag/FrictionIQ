@@ -1,4 +1,4 @@
-SEED ?= 20261006
+SEED ?= 4127
 PY ?= python3
 
 .PHONY: all data results test serve clean

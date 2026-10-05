@@ -10,56 +10,74 @@ many times did we interrupt this client last month, and which rule did it?"*
 FrictionIQ is a measurement and analysis layer over decisions that already happened. It builds
 two things:
 
-1. **A friction score per client.** It counts every intervention the client received (deny, hold,
-   settlement limit, restriction, block, termination), weights each by severity and recency, and
-   tags each one with the rule that caused it.
+1. **A friction score per client.** It counts every intervention the client received, weights
+   each one by severity and recency, and tags it with the rule that caused it. The score is shown
+   as an A–F friction grade.
 2. **A tradeoff curve per rule.** It sweeps the rule's threshold, re-runs the whole population,
    and plots the friction removed against the fraud still caught.
 
 It does not detect fraud, score risk or make decisions. Every output is a recommendation, and a
 human decides what to do with it.
 
+This is the v3 build, implementing PRD v3 and the Figma screens in [`design/`](design/README.md).
+
 ## Quick start
 
 ```bash
 pip install -r requirements.txt     # numpy, pytest
-make all                            # generate the seeded world, then precompute every curve (~6 s)
-make test                           # the seven PRD scenarios + invariants
+make all                            # generate the seeded world (seed 4127), then precompute every curve (~20 s)
+make test                           # the seven PRD scenarios, the design's rule labels, invariants
 open web/index.html                 # or: make serve  →  http://localhost:8000
 ```
 
 The page is static. It reads `web/data/frictioniq.js` and never recomputes anything, so the
-slider responds instantly and nothing can hang during a recording.
+window selector and the threshold slider respond instantly.
+
+## The three screens
+
+They follow the Figma designs: Salt Design System, Legacy theme, Open Sans. Each screen has a
+30 days / 60 days / 1 year window.
+
+| Screen | Answers | What's on it |
+|---|---|---|
+| **Home** (portfolio) | How big is this, and where do I look first? | Four headline numbers; every client plotted by friction score against good-client band, with the "good clients, heavy friction" quadrant shaded; A–F grade distribution; good clients to look at first; rules causing the most friction with their free stretch |
+| **Client friction detail** | Is this good client being over-challenged, and by which rule? | One-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); time waiting on their money; payouts denied; share from the top rule; percentile among similar clients; one timeline lane per rule; intervention log with rule tooltips; good-client evidence; "why this rule keeps firing" plot |
+| **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Rule list with free-stretch tags; the curve (friction removed as a band across weightings, fraud still caught as a line, free stretch shaded and named); a threshold slider aligned under the x-axis (or type a value); friction removed, clients no longer interrupted and fraud still caught; the plain-language sentence; a shadow-test proposal you can draft and copy |
 
 ## The demo (under three minutes)
 
-1. **Client friction detail → Acme Supplies** (the page opens here). Acme is a good merchant: 38
-   months with us, established band, 25 of 25 challenges cleared, no fraud. It received **9
-   interventions in 30 days, and 7 of them came from one rule**, `instant_payout_cap` (DENY when
-   `amount > 100`). Acme's normal instant payout is about $150.
-2. Click **Open the instant_payout_cap curve →**. Drag the slider. Friction drops while the fraud
-   line stays flat out to **$781**, because the fraud this rule catches is mostly $2,000+. Read out
-   the sentence under the chart: *"Relaxing instant_payout_cap from $100 to $518 removes 1,495
-   interventions from 89 clients … with no change in fraud caught (53 of 53)."*
-3. Switch to **boarding_identity_mismatch**. This curve has no flat stretch: the first step of
-   relaxation already loses fraud. That's the honest beat. Some rules are earning their friction.
-4. In reserve for Q&A: **Nimbus Pay Partners**, the guardrail. It has high friction and 2
-   confirmed fraud cases, and the tool declines to relax.
+1. **Home.** The shaded "start here" quadrant holds good clients carrying heavy friction. Acme
+   Supplies is labelled in it.
+2. **Click Acme Supplies.** It has 9 interventions in the last 30 days, 7 of them from
+   `payout_limit_100`, and it has never had a confirmed fraud case. That rule went live on Aug 28,
+   which is why Acme went from 3 interventions in August to 9 this month. Acme's normal payout is
+   about $150, while fraud starts at about $1,900.
+3. **Open rule tradeoff.** The slider opens at $500: *"Raising payout_limit_100 from $100 to $500
+   removes 588 interventions from 137 clients a month, and catches the same 38 fraud cases."* The
+   free stretch runs to $1,800. Acme goes from 7 interventions to 0.
+4. **Pick `boarding_doc_mismatch`.** It has no free stretch: the first step already misses fraud.
+   This is the honest beat, because some rules earn their friction.
+5. **In reserve for Q&A:** Northwind Payfac is the guardrail. It is graded F, but it has 2
+   confirmed fraud cases, so the tool recommends nothing for it.
 
-## Results on the seeded population (seed 20261006)
+## Results on the seeded population (seed 4127, last 30 days)
 
 | Measure | Baseline | Result |
 |---|---|---|
-| Fraud caught and missed | 232 caught, 28 missed of 260 | 232 caught after relaxing every free-friction rule to the end of its flat stretch (unchanged) |
-| Friction events removed at zero capture cost | 0 (not measured today) | **2,595 interventions from 206 clients**, non-trivial on 8 rules |
-| Challenge reduction, established band | 1,445 interventions | 710 after; friction cut median **64% (53–74%) across 300 weightings** |
-| Clients above the high-friction line | 78 | 24; **no client's friction rises** |
-| Range width across weightings | n/a | widest flat-stretch spread is 4.8 percentage points |
-| Rules with no flat stretch | unknown | `boarding_identity_mismatch`; `high_risk_mcc_restrict` is a two-state list rule |
+| Fraud caught and missed | 95 caught, 8 missed of 103 | 95 caught after relaxing every rule to the end of its free stretch (unchanged) |
+| Friction removed at zero capture cost | 0 (not measured today) | **917 interventions from 227 clients**, free or small free stretch on 7 rules |
+| Challenge reduction, established band | current thresholds | established-band friction cut median **81% (80–82%) across 300 weightings** |
+| Clients above the high-friction line | 78 | 10; **no client's friction rises** |
+| Range width across weightings | n/a | widest free-stretch spread is 15.6 percentage points |
+| Rules with no free stretch | unknown | `boarding_doc_mismatch`, `payout_velocity_24h`, `device_change_payout` |
 
-The distributional check found something worth stating. After relaxation, the top decile's share
-of total friction rises from 38% to 59%. Nobody was pushed up, though: what remains is concentrated
-on clients outside the established band, mostly ones with confirmed fraud.
+The free-stretch labels match the designs in every window. That includes "Free to $1,800",
+"Free to 4×", "Free to 18%", "Small free stretch" for `new_counterparty` and `geo_mismatch`, and
+"No free stretch" for the three rules above.
+
+`out/frictioniq-summary.json` holds the 30-day results in the same shape as the designers'
+[`data/frictioniq-mock.json`](data/frictioniq-mock.json), so the Figma placeholders can be swapped
+for real (synthetic) output.
 
 ## How it works
 
@@ -71,120 +89,136 @@ friction(client) = Σ over prevailing hits of  decision_weight × duration_facto
 
 | Rule | Effect |
 |---|---|
-| **Prevailing hits only** | When several live rules hit one event, the highest-ranked decision prevails, and ties go to the lowest binding `order`. The other hits are recorded as *contributing* and shown in the client view, but they caused nothing and are not scored. |
+| **Prevailing hits only** | When several live rules hit one event, the highest-ranked decision prevails, and ties go to the lowest binding `order`. The other hits are recorded as *contributing*: they are shown in the log but never scored. |
+| **Deny or hold** | A rule authored as `DENY_OR_HOLD` denies an instant payout (it can't be held) and holds a standard one. The weight follows the action actually applied. |
 | **Shadow hits score zero** | They fire and log, but no client paid for them. That makes them a free control group. |
-| **Duration factor for holds** | `log(1 + hours_held / reference_hours)`, from the hit's own `triggered_at` and `resolved_at`. Non-hold actions take a factor of 1. |
-| **Incidents in their own band** | Severity weight × duration factor × recency, never mixed into the rule-attributed total. |
-| **Recency** | `0.5 ^ (days_since / half_life)` |
+| **Duration factor for holds** | `log(1 + hours_held / reference_hours)`, measured from the hit's own timestamps. |
+| **Incidents in their own band** | Never added to a score. They are shown as a note and an "Incident" tag. |
+| **Recency** | `0.5 ^ (days_since / half_life)`, relative to the as-of date (Oct 3, 2026). |
 
-The index is deliberately **not a model**. It is deterministic arithmetic, so every number
-traces back to the events that produced it.
+**Friction grade.** The score maps to A 0–49, B 50–99, C 100–149, D 150–219, E 220–299 and F 300+.
+These cutoffs are placeholders from the PRD. The grade describes the friction *we applied*, not the
+client, and it is always shown with its range across weightings.
 
 ### No single weighting (`index.sample_weightings`)
 
-The weights in `config/frictioniq.json` are placeholders and are labelled that way on screen.
-Every result is computed under the placeholder setting plus **300 sampled configurations**. Each
-sample uses weight vectors consistent with the intervention ordering (settlement limit <
-restriction < hold < deny < block < termination), a half-life between 14 and 60 days, reference
-hours between 1 and 24, and a log or saturating duration shape. The whiskers on every curve show
-the 5th–95th percentile across these samples.
+The weights in `config/frictioniq.json` (v0.1) are placeholders. Every figure is computed under
+the placeholder plus **300 sampled configurations**:
+
+- weight vectors that respect the intervention ordering (settlement limit < restriction < hold <
+  deny < block < termination)
+- each vector scaled so a hold weighs 25, the placeholder value; only the ordering is assumed
+- a half-life between 14 and 60 days
+- reference hours between 1 and 24
+- a log or saturating duration shape
+
+Bands and whiskers on screen are the 5th–95th percentile across these samples.
 
 ### Good-client bands (`frictioniq/bands.py`)
 
-There are three bands: **established**, **developing** and **limited history**. They are built on
-evidence that does not itself come from the controls:
+There are three bands: **established**, **developing** and **limited history**. They are built
+from 12 months of evidence that the controls did not create:
 
 - tenure
-- **resolution outcomes**: how challenges ended, not whether rules fired
-- behavioural stability: week-to-week volume beyond Poisson noise
-- account standing: chargeback rate
+- review outcomes: how challenges ended, not whether rules fired
+- confirmed fraud, which is a disqualifier, never a score
+- payout pattern: week-to-week volume beyond Poisson noise, plus the median payout
+- disputes and chargebacks
 
-Confirmed fraud is a disqualifier, never a score. If tenure is unknown, the client is capped at
-developing. This definition is a **proposal for Risk Strategy to argue with**, not a validated
-construct.
+This definition is a **proposal for Risk Strategy to argue with**, not a validated construct.
 
 ### The tradeoff curve (`frictioniq/sweep.py`)
 
-For each rule, the sweep walks a grid of thresholds from the live setting out to "never fires".
-The threshold is a literal in `rule_expression`, so each step is a string edit
-(`contract.expression.with_threshold`). At each step the sweep:
+For each rule and window, the sweep walks readable thresholds ($100, $110 … $1,800 …; 3×, 3.5×,
+4× …) out to "never fires". The threshold is a literal in `rule_expression`, so each step is a
+string edit. At each step the sweep:
 
 - re-evaluates the expression over all decision events
 - removes the hits that no longer fire
-- re-runs attribution, so another rule can take over an event
+- re-runs attribution
 - recomputes friction under all 301 weightings
 - counts fraud caught across the whole population
 
-Both arms see identical clients, events and fraud labels.
+The **free stretch** is the furthest threshold at which the rule still catches every fraud case it
+catches today. The labels work like this:
 
-- **Flat stretch** is the furthest threshold at which the rule still catches every fraud case it
-  caught at the live setting.
-- **Verdicts**: *free friction* means the flat stretch removes at least 10% of the rule's friction
-  under 95% of weightings. *Marginal* means it removes less. *Earning its friction* means there is
-  no flat stretch. Shadow rules, rules that fire only on fraud, and two-state list rules are
-  labelled as such.
-- **Segment policy** (dynamic relaxation): a toggle applies the relaxed threshold only to
-  established clients above the 75th-percentile friction line.
-- **Relaxation only.** A looser threshold can only remove hits that were logged, so every
-  counterfactual hold keeps its measured duration. Tightening would invent hits whose durations
-  were never observed.
+- **"Free to X"**: the free stretch removes at least 30% of the rule's friction under 95% of
+  weightings.
+- **"Small free stretch"**: it removes at least 5%.
+- **"No free stretch"**: anything less.
+
+The slider opens at the first round setting inside the free stretch that removes 80% of the
+rule's friction. For `payout_limit_100` that is $500. The sweep is **relaxation only**, so every
+counterfactual hit keeps its measured timestamps.
 
 ### Path to production
 
-Shield rules have a shadow setting. Clone the rule, set the clone's threshold to the relaxed
-value, set `shadow_setting = ON`, and run it against live traffic for one reporting window. The
-live rule's hits are what clients paid, and the clone's hits are what they would have paid. The
-counterfactual becomes an observation. The explorer prints the exact clone expression for any
-slider position. **Two things to confirm first:** that shadow hits land in the same store as live
-hits, and that a shadow clone can bind to a ruleset without changing the live order.
+Clone the rule at the relaxed threshold with `shadow_setting = ON` and run it for 30 days next to
+the live rule. The live rule's hits are what clients paid, and the clone's are what they would
+have paid. The **Draft shadow test proposal** button writes this up from the curve. **Confirm
+first** that shadow hits land in the same store as live hits, and that a clone binds without
+changing live order.
 
 ## Repository layout
 
 ```
 contract/     the frozen schema + rule-expression grammar: the ONLY thing generator and analysis share
 generator/    teammate-owned seeded synthetic world (clients → behaviour → rule hits → fraud labels)
-  registry.py   12 rules + ruleset bindings, varying in quality on purpose
-  scenarios.py  the seven PRD client scenarios, seeded deliberately
-  world.py      population archetypes, fraud scenarios, feature distributions
-  engine.py     runs events through rulesets; logs prevailing/contributing/shadow/overridden hits
+  registry.py   11 rules + ruleset bindings: the 8 from the designs, 3 the PRD scenarios need, 1 shadow
+  scenarios.py  the seven PRD client scenarios (Acme's log matches the mock exactly) + 3 named design clients
+  world.py      archetypes, fraud episodes, controlled edge cases, feature distributions
+  engine.py     runs events through rulesets; logs prevailing / contributing / shadow / overridden hits
 frictioniq/   analysis: index, attribution, bands, weighting sweep, threshold sweep, export
-config/       frictioniq.json (placeholder weights + sweep ranges), demo.json (demo walk-through only)
-web/          three screens, vanilla JS + SVG, reading web/data/frictioniq.js
-tests/        PRD scenarios 1–7 as tests, plus invariants
+config/       frictioniq.json (placeholder weights, grades, sweep ranges), demo.json (demo walk-through only)
+design/       the Figma screen designs and their README
+data/         frictioniq-mock.json (the designers' target shape); generated CSVs land here (gitignored)
+web/          the three screens, vanilla JS + SVG, reading web/data/frictioniq.js
+tests/        PRD scenarios, design labels, invariants
 ```
 
-### Schema (`contract/schema.py`)
+### Schema changes in v3 (`contract/schema.py`)
 
-These tables mirror the rule-authoring structure in the PRD: `rules`, `ruleset_bindings`,
-`rule_hits`, `clients` and `incidents`. There are three additions, all marked in the code:
+- Rules gain `description` (shown in the log's rule tooltip) and `live_since`. A rule only
+  evaluates events after its live date.
+- `request_type` may list several types (`PAYOUT|INSTANT_PAYOUT`).
+- New decision `DENY_OR_HOLD`, resolved per request type by `contract.schema.resolve_decision`.
+- New checkpoint `PRE_SETTLEMENT` and request types `SETTLEMENT` and `BULK_PAYOUT`. Mid-market,
+  enterprise and payfac payouts are bulk, so `payout_limit_100` doesn't apply to them.
+- New `disputes` table for account standing.
+- The history is now 12 months, Oct 3 2025 to Oct 3 2026, to support the 1-year window.
 
-- `event_id` on `rule_hits`, because attribution is per event and a hit must name its event.
-- `decision_events`, the population every sweep re-runs over. It carries the feature columns that
-  rule expressions compare against.
-- `fraud_cases`, the capture guardrail.
+## Where this departs from the PRD or the mock
 
-## What to know before presenting this
-
-- **Blind generation was not achieved in this build.** The PRD asks for the generator and the
-  analysis to be written by different people, with the schema as the only contract. Here both
-  were written in the same session. The generator was tuned to the PRD's generation rules, which
-  require one rule with a long flat stretch and one with none, and it was tuned after seeing the
-  first curves. The code is separated along the contract (`generator/` never imports
-  `frictioniq/`) so that your teammate can take ownership of `generator/`, rewrite its
-  distributions blind, and regenerate. Do this before claiming blind generation.
-- The 7 scenario clients are curated. The success metrics above are population-wide.
-- Downstream overrides (`action_taken = OVERRIDDEN`) are read from the log, because the analysis
-  cannot re-derive them.
-- `config/demo.json` names the demo clients for the walkthrough only. The analysis does not read
-  it.
-- Explanations are scoped to Operations, not to clients, because telling a client why they were
-  held teaches evasion.
+- **Volumes.** To give the 30-day window the density the screens show, the 12-month dataset
+  exceeds the PRD's dataset table (written for a shorter ledger). It has 128k decision events
+  against 20–50k, and 1,146 fraud cases against 150–400. Friction events are 7,621, inside 4–8k.
+  The 30-day window is what the screens show: 1,265 interventions and 103 fraud cases.
+- **Figures differ from the mock.** The mock's values were placeholders. The *shapes* match: Acme's
+  log, "3 → 9", ~2 days waiting, 5 payouts denied, the free-stretch labels, and $500 removing
+  about 80% at no fraud cost. The *numbers* come from the generator: 1,265 interventions rather
+  than 3,570, and 38 fraud cases on the hero rule rather than 148. Acme grades E (C–F across
+  weightings) at the 86th percentile of 75 similar clients, rather than F at the 96th.
+- **Delta Bakehouse** (85% of its friction from an outage) is in the mock's "look at first" list
+  with a grade of E. The PRD says outage friction is never added to a score, so its score is low,
+  it grades A, and it doesn't make that list. The incident shows as a tag and a note on its client
+  screen.
+- **Controlled edge cases.** Every 15 days, each fraud type places one case just past the point
+  where its rule's free stretch should end. The PRD calls for fraud labels "from controlled
+  scenarios". Without these, a 30-day window holds so few cases per rule that the labels would
+  depend on luck.
+- **Blind generation was not achieved.** The generator and the analysis were written in the same
+  session, and the generator was tuned so the curves match the designs. The code is split along
+  the contract (`generator/` never imports `frictioniq/`), so a teammate can take `generator/`,
+  rewrite it blind and regenerate. Do that before claiming blind generation.
+- **Not built from the design README:** the rule-cell tooltip screenshot (`rule-cell-tooltip.png`)
+  wasn't supplied. The tooltip itself is implemented in the intervention log.
 - **AI disclosure:** this build, including this write-up, was produced with AI assistance.
 
 ## Open questions (from the PRD)
 
 - Are shadow-mode hits logged to the same store as live hits? Can a shadow clone bind without
   disturbing the live order?
-- Four colleagues should rank the seven interventions by client burden. That would turn invented
-  weights into elicited ones.
-- Does anyone in Risk Strategy have a view on the good-client definition?
+- Four colleagues should rank the seven interventions by client burden, to turn invented weights
+  into elicited ones.
+- Does anyone in Risk Strategy have a view on the good-client definition, or on absolute versus
+  peer-relative grade cutoffs?

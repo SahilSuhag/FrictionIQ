@@ -1,0 +1,71 @@
+{
+  "_note": "Synthetic placeholder values used in the FrictionIQ Figma screens. Not real clients, rules or outcomes. Replace with the seeded generator output once it exists.",
+  "generator_seed": 4127,
+  "window": { "default": "30d", "options": ["30d", "60d", "1y"], "range": "2026-09-03/2026-10-03" },
+  "friction_grades": {
+    "_note": "Placeholder cutoffs on the raw friction score. Grade describes the friction we applied, not the client.",
+    "A": [0, 49], "B": [50, 99], "C": [100, 149], "D": [150, 219], "E": [220, 299], "F": [300, null],
+    "colors": { "A": "#2E8540", "B": "#86B63A", "C": "#E3BE2B", "D": "#F0A23A", "E": "#E5683C", "F": "#C8102E" }
+  },
+  "portfolio": {
+    "clients": 312,
+    "interventions": 3570,
+    "clients_interrupted": 274,
+    "good_clients_heavy_friction": 41,
+    "free_to_remove": 1980,
+    "grade_counts": { "A": 38, "B": 61, "C": 72, "D": 58, "E": 45, "F": 38 },
+    "incidents": { "count": 2, "clients_affected": 46 }
+  },
+  "rules": [
+    { "rule_id": "payout_limit_100", "decision": "DENY_OR_HOLD", "checkpoint": "PRE_PAYOUT", "live_since": "2026-08-28", "description": "Denies or holds any payout over $100 before it is released.", "interventions": 1520, "free_stretch": "Free to $1,800" },
+    { "rule_id": "velocity_check", "decision": "SETTLEMENT_LIMIT", "checkpoint": "PRE_SETTLEMENT", "live_since": "2024-03", "description": "Limits settlement when a client's 24-hour transaction count is 3x their 30-day average.", "interventions": 640, "free_stretch": "Free to 4x" },
+    { "rule_id": "new_counterparty", "decision": "HOLD", "checkpoint": "PRE_PAYOUT", "live_since": "2025-01", "description": "Holds a payout for review when it goes to someone the client has never paid before.", "interventions": 410, "free_stretch": "Small free stretch" },
+    { "rule_id": "boarding_doc_mismatch", "interventions": 380, "free_stretch": "No free stretch" },
+    { "rule_id": "geo_mismatch", "interventions": 220, "free_stretch": "Small free stretch" },
+    { "rule_id": "payout_velocity_24h", "interventions": 190, "free_stretch": "No free stretch" },
+    { "rule_id": "refund_ratio_30d", "interventions": 120, "free_stretch": "Free to 18%" },
+    { "rule_id": "device_change_payout", "interventions": 90, "free_stretch": "No free stretch" }
+  ],
+  "tradeoff_payout_limit_100": {
+    "today_threshold": 100,
+    "selected_threshold": 500,
+    "flat_stretch_ends_at": 1800,
+    "friction_removed_pct": [[100, 0], [150, 30], [250, 55], [400, 74], [500, 81], [750, 88], [1000, 92], [1800, 96], [2500, 97.5], [3500, 98.5], [5000, 99]],
+    "fraud_caught_pct": [[100, 100], [1800, 100], [2100, 97], [2500, 88], [3000, 76], [4000, 62], [5000, 52]],
+    "at_selected": { "interventions_removed": 1230, "removed_pct_range": [74, 85], "clients_no_longer_interrupted": 196, "of_which_established": 158, "fraud_cases_caught": 148, "fraud_cases_today": 148 }
+  },
+  "client_acme": {
+    "client_id": "ACME-0417",
+    "name": "Acme Supplies",
+    "segment": "Direct SMB",
+    "tenure_months": 38,
+    "band": "Established",
+    "friction_score": 312,
+    "score_range": [270, 355],
+    "grade": "F",
+    "grade_range": ["E", "F"],
+    "peer_percentile": 96,
+    "peer_n": 84,
+    "interventions_prev_month": 3,
+    "evidence": { "reviews_cleared": "14 of 14", "confirmed_fraud": 0, "median_payout_usd": 150, "disputes_12m": 0 },
+    "interventions": [
+      { "date": "2026-09-04", "rule_id": "payout_limit_100", "action": "Deny payout", "checkpoint": "PRE_PAYOUT", "held_hours": null, "outcome": "No fraud found" },
+      { "date": "2026-09-07", "rule_id": "payout_limit_100", "action": "Hold, manual review", "checkpoint": "PRE_PAYOUT", "held_hours": 18, "outcome": "Cleared" },
+      { "date": "2026-09-11", "rule_id": "payout_limit_100", "action": "Deny payout", "checkpoint": "PRE_PAYOUT", "held_hours": null, "outcome": "No fraud found" },
+      { "date": "2026-09-15", "rule_id": "payout_limit_100", "action": "Deny payout", "checkpoint": "PRE_PAYOUT", "held_hours": null, "outcome": "No fraud found" },
+      { "date": "2026-09-17", "rule_id": "velocity_check", "action": "Settlement limit", "checkpoint": "PRE_SETTLEMENT", "held_hours": 72, "outcome": "Limit lifted" },
+      { "date": "2026-09-20", "rule_id": "payout_limit_100", "action": "Hold, manual review", "checkpoint": "PRE_PAYOUT", "held_hours": 30, "outcome": "Cleared" },
+      { "date": "2026-09-25", "rule_id": "payout_limit_100", "action": "Deny payout", "checkpoint": "PRE_PAYOUT", "held_hours": null, "outcome": "No fraud found" },
+      { "date": "2026-09-27", "rule_id": "new_counterparty", "action": "Hold, manual review", "checkpoint": "PRE_PAYOUT", "held_hours": 2, "outcome": "Cleared" },
+      { "date": "2026-09-30", "rule_id": "payout_limit_100", "action": "Deny payout", "checkpoint": "PRE_PAYOUT", "held_hours": null, "outcome": "No fraud found" }
+    ]
+  },
+  "clients_to_look_at": [
+    { "name": "Acme Supplies", "grade": "F", "score": 312, "cause": "7 of 9 from payout_limit_100" },
+    { "name": "Birchway Florists", "grade": "F", "score": 305, "cause": "Mostly velocity_check" },
+    { "name": "Copperline Tools", "grade": "E", "score": 281, "cause": "payout_limit_100 and new_counterparty" },
+    { "name": "Delta Bakehouse", "grade": "E", "score": 262, "cause": "85% from an outage, not a rule", "incident": true },
+    { "name": "Evergreen Print", "grade": "E", "score": 241, "cause": "payout_limit_100" }
+  ],
+  "earned_friction_example": { "name": "Northwind Payfac", "tenure_months": 7, "band": "Limited history", "confirmed_fraud": 2, "grade": "F" }
+}

@@ -1,6 +1,5 @@
 {
   "_notice": "PLACEHOLDER values. Not elicited, not validated. Shown on screen as placeholders; every conclusion is reported across the sweep ranges below, never at this single point.",
-
   "decision_weights": {
     "SHADOW": 0,
     "SETTLEMENT_LIMIT": 10,
@@ -14,24 +13,97 @@
   "reference_hours": 4,
   "duration_shape": "log",
   "saturating_cap_hours": 48,
-  "incident_severity_weights": { "SEV1": 50, "SEV2": 30, "SEV3": 15 },
-
+  "incident_severity_weights": {
+    "SEV1": 50,
+    "SEV2": 30,
+    "SEV3": 15
+  },
   "weighting_sweep": {
     "_comment": "Anchor A: sample weight vectors consistent with the intervention ordering (settlement limit < restriction < hold < deny < block < termination) and run the analysis at every one.",
     "n_samples": 300,
     "seed": 7,
-    "half_life_days": [14, 60],
-    "reference_hours": [1, 24],
-    "duration_shapes": ["log", "saturating"]
+    "half_life_days": [
+      14,
+      60
+    ],
+    "reference_hours": [
+      1,
+      24
+    ],
+    "duration_shapes": [
+      "log",
+      "saturating"
+    ]
   },
-
   "good_client": {
     "_comment": "A proposal for discussion with Risk Strategy, not a validated construct. Confirmed fraud is a disqualifier, never a score.",
-    "established": { "min_tenure_months": 24, "min_clear_rate": 0.9, "max_overdispersion": 0.45, "max_chargeback_rate": 0.02 },
-    "developing": { "min_tenure_months": 12, "min_clear_rate": 0.75, "max_chargeback_rate": 0.03 }
+    "established": {
+      "min_tenure_months": 24,
+      "min_clear_rate": 0.9,
+      "max_overdispersion": 0.45,
+      "max_disputes_12m": 2,
+      "max_dispute_rate": 0.01
+    },
+    "developing": {
+      "min_tenure_months": 12,
+      "min_clear_rate": 0.75,
+      "max_disputes_12m": 4,
+      "max_dispute_rate": 0.02
+    }
   },
-
-  "threshold_steps": 40,
+  "threshold_steps": 48,
   "high_friction_percentile": 75,
-  "score_windows_days": [7, 30]
+  "score_windows_days": [
+    30,
+    60,
+    365
+  ],
+  "weights_version": "v0.1",
+  "friction_grades": {
+    "_comment": "Placeholder cutoffs on the raw friction score. The grade describes the friction we applied, not the client.",
+    "cutoffs": {
+      "A": [
+        0,
+        49
+      ],
+      "B": [
+        50,
+        99
+      ],
+      "C": [
+        100,
+        149
+      ],
+      "D": [
+        150,
+        219
+      ],
+      "E": [
+        220,
+        299
+      ],
+      "F": [
+        300,
+        null
+      ]
+    },
+    "colors": {
+      "A": "#2E8540",
+      "B": "#86B63A",
+      "C": "#E3BE2B",
+      "D": "#F0A23A",
+      "E": "#E5683C",
+      "F": "#C8102E"
+    },
+    "heavy": [
+      "E",
+      "F"
+    ]
+  },
+  "free_stretch": {
+    "_comment": "Labels for a rule's free stretch: 'Free to X' when, under 95% of weightings, it removes at least `free_pct` of the rule's friction; 'Small free stretch' when it removes at least `small_pct`; otherwise 'No free stretch'.",
+    "free_pct": 30,
+    "small_pct": 5,
+    "recommend_pct": 80
+  }
 }

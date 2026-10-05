@@ -25,16 +25,17 @@ def main(argv=None):
     result = report.build(Dataset(args.data), cfg, demo)
     report.write(result, args.out, args.js)
 
-    m = result["metrics"]
-    print(f"fraud caught at live thresholds: {m['fraud']['caught_baseline']} of {m['fraud']['total']}")
-    for r in m["free_friction_by_rule"]:
-        print(f"  {r['rule_id']} {r['name']:<30} {r['verdict']:<18} flat to {r['expression']:<34} "
-              f"removes {r['interventions_removed']:>5} interventions")
+    m = result["metrics"]["30d"]
+    p = result["portfolio"]["30d"]
+    print(f"last 30 days: {p['interventions']} interventions on {p['clients_interrupted']} of {p['clients']} clients; "
+          f"{p['good_clients_heavy_friction']} established clients graded E or F")
+    print(f"fraud caught at live thresholds: {m['fraud']['caught']} of {m['fraud']['total']}")
+    for r in m["free_by_rule"]:
+        print(f"  {r['rule_id']:<24} {r['label']:<22} {r['expression']:<34} removes {r['interventions_removed']:>4}")
     ra = m["relax_all"]
-    print(f"all free-friction rules relaxed together: {ra['interventions_removed']} interventions removed "
-          f"from {ra['clients_affected']} clients; fraud caught {m['fraud']['caught_after_relax_all']} "
-          f"of {m['fraud']['total']}")
-    print(f"rules with no flat stretch: {', '.join(m['no_flat_stretch']) or 'none'}")
+    print(f"every free stretch at once: {ra['interventions_removed']} interventions removed from "
+          f"{ra['clients_affected']} clients; fraud caught {m['fraud']['caught_after_relax_all']} of {m['fraud']['total']}")
+    print(f"no free stretch: {', '.join(m['no_free_stretch']) or 'none'}")
 
 
 if __name__ == "__main__":

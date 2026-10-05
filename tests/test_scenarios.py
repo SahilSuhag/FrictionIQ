@@ -1,17 +1,35 @@
-"""The seven PRD client scenarios, plus the invariants the curve's honesty rests on.
+"""The seven PRD client scenarios, the screen designs' rule labels, and the invariants the
+curve's honesty rests on.
 
 If these behave correctly the logic is right. Scenario pairs are the useful part:
-5a/5b differ only in hold duration, 1/7 differ only in whether the rule has a flat
+5a/5b differ only in hold duration, 1/7 differ only in whether the rule has a free
 stretch.
 """
+
+import json
+import os
 
 import numpy as np
 import pytest
 
-from contract import expression
+from contract import expression, schema
 from frictioniq import config, index, report
-from frictioniq.data import Dataset
+from frictioniq.data import Dataset, hours
 from generator import generate
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Free-stretch labels from the screen designs (frictioniq-mock.json).
+DESIGN_LABELS = {
+    "payout_limit_100": "Free to $1,800",
+    "velocity_check": "Free to 4×",
+    "new_counterparty": "Small free stretch",
+    "boarding_doc_mismatch": "No free stretch",
+    "geo_mismatch": "Small free stretch",
+    "payout_velocity_24h": "No free stretch",
+    "refund_ratio_30d": "Free to 18%",
+    "device_change_payout": "No free stretch",
+}
 
 
 @pytest.fixture(scope="session")
@@ -20,103 +38,136 @@ def world(tmp_path_factory):
     generate.main(["--seed", str(generate.DEFAULT_SEED), "--out", str(out)])
     ds = Dataset(str(out))
     cfg = config.load()
-    res = report.build(ds, cfg)
+    demo = json.load(open(os.path.join(ROOT, "config", "demo.json")))
+    res = report.build(ds, cfg, demo)
     clients = {c["client_id"]: c for c in res["clients"]}
     rules = {r["rule_id"]: r for r in res["rules"]}
     return ds, cfg, res, clients, rules
 
 
 def prevailing_30d(res, cid):
-    return [h for h in res["timelines"][cid] if h["action"] == "PREVAILED" and h["t"] >= "2026-09-01"]
+    start = res["meta"]["windows"]["30d"]["start"]
+    return [h for h in res["timelines"][cid] if h["a"] == "P" and h["t"] >= start]
 
 
 # ---------------------------------------------------------------- scenarios
 
 def test_1_hero_one_rule_causes_most_friction_and_relaxing_it_is_free(world):
     ds, cfg, res, clients, rules = world
-    acme = clients["CL-0001"]
-    assert acme["name"] == "Acme Supplies"
-    assert acme["band"] == "established"
-    hits = prevailing_30d(res, "CL-0001")
-    assert len(hits) == 9
-    assert sum(h["rule_id"] == "R01" for h in hits) == 7
-    assert acme["top_rule"] == "R01"
-    assert all(h["final"] == "CLEARED" for h in res["timelines"]["CL-0001"])
+    acme = clients["ACME-0417"]
+    w = acme["windows"]["30d"]
+    assert acme["name"] == "Acme Supplies" and acme["band"] == "established"
+    hits = prevailing_30d(res, "ACME-0417")
+    assert len(hits) == 9 and w["n"] == 9
+    r01 = [h for h in hits if h["r"] == "payout_limit_100"]
+    assert len(r01) == 7
+    assert sorted(h["d"] for h in r01) == ["DENY"] * 5 + ["HOLD"] * 2      # deny-or-hold by payout type
+    assert w["prev_n"] == 3                                                 # "3 -> 9"
+    assert w["top_rule"] == "payout_limit_100"
+    assert w["denied"] == 5 and w["denied_fraud"] == 0
+    assert w["holds"] == 3 and w["holds_cleared"] == 3 and 45 <= w["hold_hours"] <= 55   # ~2 days
+    ev = acme["evidence"]
+    assert (ev["cleared"], ev["challenges"], ev["confirmed_fraud"], ev["disputes_12m"]) == (14, 14, 0, 0)
+    assert 140 <= ev["median_payout"] <= 160
 
-    r01 = rules["R01"]["curve"]
-    assert r01["verdict"] == "free_friction"
-    # Raising the cap to $500 keeps every fraud case the rule caught.
-    i500 = max(i for i, t in enumerate(r01["grid"]) if t <= 500)
-    assert r01["points"][i500]["fraud_caught_rule"] == r01["base_fraud_caught_rule"]
-    # ...and at the end of the flat stretch all of Acme's R01 denials are gone.
-    assert acme["relax_removed_at_flat"]["R01"] == 21
+    hero = rules["payout_limit_100"]
+    c = hero["windows"]["30d"]["curve"]
+    assert c["label"] == "Free to $1,800"
+    i500 = hero["grid"].index(500)
+    assert c["recommended_index"] == i500
+    assert c["points"][i500]["fraud_caught_rule"] == c["base_fraud_caught_rule"]
+    assert c["points"][i500]["pct"][0] >= 80
+    assert hero["windows"]["30d"]["example"]["client_id"] == "ACME-0417"
+    assert c["points"][0]["example_interventions"] == 7 and c["points"][i500]["example_interventions"] == 0
 
 
 def test_2_incident_band_is_separate_and_relaxing_rules_would_not_help(world):
     _, _, _, clients, _ = world
-    harbor = clients["CL-0002"]
-    share = harbor["incident30"] / (harbor["incident30"] + harbor["f30"]["ref"])
+    w = clients["DELT-2265"]["windows"]["30d"]
+    share = w["incident"]["friction"] / (w["incident"]["friction"] + w["score"][0])
     assert 0.8 <= share <= 0.9
-    assert harbor["n30"] == 2
-    assert harbor["relax_removed_at_flat"] == {}
+    assert w["n"] == 2
+    assert w["grade"] == "A"            # the outage is never added to the score
 
 
 def test_3_earned_friction_is_not_relaxed(world):
     _, _, res, clients, _ = world
-    nimbus = clients["CL-0003"]
-    assert nimbus["band"] == "limited" and nimbus["disqualified"]
-    assert nimbus["evidence"]["confirmed_fraud"] == 2
-    hits = prevailing_30d(res, "CL-0003")
+    north = clients["NORT-7716"]
+    assert north["band"] == "limited" and north["disqualified"]
+    assert north["evidence"]["confirmed_fraud"] == 2
+    hits = prevailing_30d(res, "NORT-7716")
     assert len(hits) == 11
-    assert len({h["rule_id"] for h in hits}) == 4
-    assert len({h["checkpoint"] for h in hits}) == 3
-    assert not nimbus["eligible_for_segment_policy"]
+    assert len({h["r"] for h in hits}) == 4
+    assert len({h["c"] for h in hits}) == 3
+    assert north["windows"]["30d"]["grade"] == "F"
+    assert not north["windows"]["30d"]["eligible"]
 
 
 def test_4_attribution_by_order_without_double_counting(world):
-    ds, _, res, clients, _ = world
-    tl = res["timelines"]["CL-0004"]
+    _, _, res, clients, _ = world
     by_event = {}
-    for h in tl:
-        by_event.setdefault(h["event_id"], []).append(h)
+    for h in res["timelines"]["MERI-3054"]:
+        by_event.setdefault((h["t"], h["c"]), []).append(h)
     (event,) = [hs for hs in by_event.values() if len(hs) == 3]
-    actions = {h["rule_id"]: h["action"] for h in event}
-    assert actions == {"R08": "PREVAILED", "R03": "CONTRIBUTING", "R04": "CONTRIBUTING"}
-    assert clients["CL-0004"]["n30"] == 1
-    assert clients["CL-0004"]["contributing"] == 2
-    assert abs(clients["CL-0004"]["f30"]["ref"] - sum(h["friction"] for h in event)) < 0.01
+    assert {h["r"]: h["a"] for h in event} == {"card_testing_deny": "P", "geo_mismatch": "C",
+                                               "new_device_limit": "C"}
+    w = clients["MERI-3054"]["windows"]["30d"]
+    assert w["n"] == 1
+    assert abs(w["score"][0] - sum(h["s"] for h in event)) < 0.05
 
 
 def test_5_one_long_hold_outweighs_six_short_ones_under_every_weighting(world):
-    ds, cfg, _, _, _ = world
+    ds, cfg, *_ = world
     w = index.sample_weightings(cfg)
     base = index.baseline(ds, w)
     f30 = base.windows[30]["rule"]
-    a, b = ds.client_index["CL-0005"], ds.client_index["CL-0006"]
+    a, b = ds.client_index["JUNI-5521"], ds.client_index["OAKM-6630"]
     assert base.windows[30]["count"][a] == 1 and base.windows[30]["count"][b] == 6
     assert (f30[a] > f30[b]).all()
 
 
 def test_6_shadow_hits_log_but_cost_nothing(world):
     _, _, res, clients, _ = world
-    lantern = clients["CL-0007"]
+    lantern = clients["LANT-8842"]
     assert lantern["band"] == "developing"
-    assert lantern["shadow"] == 40
-    assert lantern["n30"] == 1
-    live = [h for h in res["timelines"]["CL-0007"] if h["action"] == "PREVAILED"]
-    assert len(live) == 1 and abs(lantern["f30"]["ref"] - live[0]["friction"]) < 0.01
+    start = res["meta"]["windows"]["30d"]["start"]
+    tl = [h for h in res["timelines"]["LANT-8842"] if h["t"] >= start]
+    assert sum(h["a"] == "S" for h in tl) == 40
+    live = [h for h in tl if h["a"] == "P"]
+    assert len(live) == 1
+    assert abs(lantern["windows"]["30d"]["score"][0] - live[0]["s"]) < 0.05
 
 
 def test_7_negative_finding_rule_earning_its_friction(world):
     _, _, res, clients, rules = world
-    halcyon = clients["CL-0008"]
-    assert halcyon["band"] == "established"
-    hits = prevailing_30d(res, "CL-0008")
-    assert len(hits) == 6 and {h["rule_id"] for h in hits} == {"R02"}
-    r02 = rules["R02"]["curve"]
-    assert r02["verdict"] == "earning"
-    assert r02["flat_index"] == 0
-    assert r02["points"][1]["fraud_caught_rule"] < r02["base_fraud_caught_rule"]
+    hits = prevailing_30d(res, "HALC-1190")
+    assert len(hits) == 6 and {h["r"] for h in hits} == {"boarding_doc_mismatch"}
+    assert clients["HALC-1190"]["band"] == "established"
+    for wkey in ("30d", "60d", "1y"):
+        c = rules["boarding_doc_mismatch"]["windows"][wkey]["curve"]
+        assert c["label"] == "No free stretch"
+        assert c["points"][2]["fraud_caught_rule"] < c["base_fraud_caught_rule"]
+
+
+# ---------------------------------------------------------------- designs
+
+@pytest.mark.parametrize("wkey", ["30d", "60d", "1y"])
+def test_rule_labels_match_the_screen_designs(world, wkey):
+    *_, rules = world
+    got = {rid: rules[rid]["windows"][wkey]["curve"]["label"] for rid in DESIGN_LABELS}
+    assert got == DESIGN_LABELS
+
+
+def test_rule_list_leads_with_the_hero_rule(world):
+    *_, rules = world
+    order = sorted(rules.values(), key=lambda r: -r["windows"]["30d"]["interventions"])
+    assert order[0]["rule_id"] == "payout_limit_100"
+
+
+def test_grades_use_the_placeholder_cutoffs(world):
+    _, cfg, *_ = world
+    cases = {0: "A", 49.9: "A", 50: "B", 149: "C", 150: "D", 219.9: "D", 220: "E", 299: "E", 300: "F", 900: "F"}
+    assert {s: report.grade_of(s, cfg) for s in cases} == cases
 
 
 # ---------------------------------------------------------------- invariants
@@ -130,42 +181,56 @@ def test_re_evaluating_rules_reproduces_the_logged_hits(world):
 
 
 def test_attribution_matches_the_log(world):
-    ds, cfg, *_ = world
+    ds, *_ = world
     prev = index.prevailing(ds, ds.hit_live)
     assert np.array_equal(prev, ds.hit_action == "PREVAILED")
 
 
-def test_weightings_respect_the_intervention_ordering(world):
+def test_rules_only_fire_after_they_go_live(world):
+    ds, *_ = world
+    for rule in ds.rules:
+        assert (ds.hit_t[ds.hit_rule == rule.idx] >= hours(rule.live_since + "T00:00:00Z")).all(), rule.rule_id
+
+
+def test_deny_or_hold_denies_instant_payouts_and_holds_the_rest():
+    assert schema.resolve_decision("DENY_OR_HOLD", "INSTANT_PAYOUT") == "DENY"
+    assert schema.resolve_decision("DENY_OR_HOLD", "PAYOUT") == "HOLD"
+    assert schema.resolve_decision("HOLD", "INSTANT_PAYOUT") == "HOLD"
+
+
+def test_weightings_respect_the_ordering_and_are_anchored_at_the_hold(world):
     _, cfg, *_ = world
     w = index.sample_weightings(cfg)
     assert w.n == cfg["weighting_sweep"]["n_samples"] + 1
     assert (np.diff(w.weights[:, 1:], axis=1) > 0).all()
     assert (w.weights[:, 0] == 0).all()
+    hold = schema.DECISION_RANK["HOLD"]
+    assert np.allclose(w.weights[:, hold], cfg["decision_weights"]["HOLD"])
 
 
 def test_curves_are_monotone_and_fraud_is_measured_on_the_whole_population(world):
     ds, _, res, _, rules = world
     for r in rules.values():
-        pts = r["curve"]["points"]
-        caught = [p["fraud_caught_rule"] for p in pts]
-        removed = [p["interventions_removed"] for p in pts]
-        assert caught == sorted(caught, reverse=True), r["rule_id"]
-        assert removed == sorted(removed), r["rule_id"]
-    assert res["metrics"]["fraud"]["total"] == int(ds.event_fraud.sum())
-    assert res["metrics"]["fraud"]["caught_after_relax_all"] == res["metrics"]["fraud"]["caught_baseline"]
+        for wkey in ("30d", "1y"):
+            pts = r["windows"][wkey]["curve"]["points"]
+            caught = [p["fraud_caught_rule"] for p in pts]
+            removed = [p["interventions_removed"] for p in pts]
+            assert caught == sorted(caught, reverse=True), r["rule_id"]
+            assert removed == sorted(removed), r["rule_id"]
+    m = res["metrics"]["30d"]["fraud"]
+    assert m["caught_after_relax_all"] == m["caught"]
 
 
-def test_volumes_match_the_prd(world):
+def test_volumes(world):
+    """Within the PRD where the 12-month history allows it; see README for the rest."""
     _, _, res, _, rules = world
     c = res["meta"]["counts"]
-    assert 200 <= c["clients"] <= 400
+    assert c["clients"] == 312
     assert 8 <= c["rules"] <= 12
-    assert 20_000 <= c["decision_events"] <= 50_000
-    assert 4_000 <= c["friction_events"] <= 8_000
-    assert 150 <= c["fraud_cases"] <= 400
     assert 2 <= len(res["incidents"]) <= 4
-    verdicts = {r["curve"]["verdict"] for r in rules.values()}
-    assert {"free_friction", "earning"} <= verdicts
+    assert res["portfolio"]["30d"]["incidents"]["count"] == 2
+    assert 1_000 <= res["portfolio"]["30d"]["interventions"] <= 4_000
+    assert res["portfolio"]["30d"]["clients_interrupted"] / 312 >= 0.8
 
 
 def test_generator_is_reproducible_from_its_seed():
@@ -177,7 +242,7 @@ def test_generator_is_reproducible_from_its_seed():
 
 def test_threshold_is_a_string_edit():
     assert expression.with_threshold("amount > 100", 500) == "amount > 500"
-    assert expression.with_threshold("refund_ratio_30d > 0.15", 0.2) == "refund_ratio_30d > 0.2"
+    assert expression.with_threshold("refund_ratio_30d > 0.15", 0.18) == "refund_ratio_30d > 0.18"
     assert not expression.parse("mcc IN [5967, 7995]").sweepable
     with pytest.raises(ValueError):
         expression.with_threshold("mcc IN [5967]", 1)
