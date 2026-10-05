@@ -43,6 +43,9 @@ def _compact_point(p: dict) -> dict:
             "fraud_caught_ruleset", "clients_above_p75", "clients_friction_increased", "rule_interventions",
             "example_interventions", "interventions_reattributed")
     out = {k: p[k] for k in keep if k in p}
+    for k in ("ledger", "freed", "fraud_usd_rule"):
+        if k in p:
+            out[k] = p[k]
     pr = p.get("pct_of_rule")
     if pr:
         out["pct"] = [_r(pr["ref"], 1), _r(pr["p5"], 1), _r(pr["p95"], 1)]
@@ -143,6 +146,7 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                 pct_rank[idx] = 100 * ranks / (len(idx) - 1)
         hold_payout = ds.hit_is_hold & ds.event_is_payout[ds.hit_event]
         deny_payout = (ds.hit_decision == "DENY") & ds.event_is_payout[ds.hit_event]
+        amount = np.nan_to_num(ds.features["amount"][ds.hit_event])
         good_heavy = 0
         grade_counts = {g: 0 for g in cfg["friction_grades"]["cutoffs"]}
         for i in range(ds.n_clients):
@@ -171,7 +175,9 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                 "hold_hours": _r(ds.hit_hours[holds].sum(), 1),
                 "holds": int(holds.sum()),
                 "holds_cleared": int((holds & (ds.hit_final == "CLEARED")).sum()),
+                "held_usd": _r(amount[holds].sum(), 0),
                 "denied": int(denies.sum()),
+                "denied_usd": _r(amount[denies].sum(), 0),
                 "denied_fraud": int((denies & ds.hit_fraud).sum()),
                 "peer_pct": [_r(pct_rank[i, 0], 0), _r(np.percentile(pct_rank[i, 1:], 5), 0),
                              _r(np.percentile(pct_rank[i, 1:], 95), 0)],
@@ -194,7 +200,19 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                 out[k] = out.get(k, 0) + 1
             return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
+        fraud_w = ds.event_fraud & (ds.event_t >= ds.as_of - days * 24)
+        caught_ev = np.unique(ds.hit_event[base.prevailing & ds.hit_fraud & wb["mask"]])
+        amt_ev = np.nan_to_num(ds.features["amount"])
         portfolio[wkey] = {
+            "ledger": sweep.ledger(ds, prev_w & legit, amount),
+            "fraud": {"caught": int(caught_ev.size), "total": int(fraud_w.sum()),
+                      "caught_usd": _r(amt_ev[caught_ev].sum(), 0), "total_usd": _r(amt_ev[fraud_w].sum(), 0)},
+            "freed": ra["freed"],
+            "rules": [{"rule_id": r.rule_id, "n": curves[r.rule_id]["points"][0]["ledger"]["n"],
+                       "usd": curves[r.rule_id]["points"][0]["ledger"]["denied_usd"]
+                       + curves[r.rule_id]["points"][0]["ledger"]["held_usd"],
+                       "fraud": curves[r.rule_id]["base_fraud_caught_rule"], "shadow": r.shadow,
+                       "live_since": r.live_since} for r in ds.rules],
             "clients": ds.n_clients,
             "interventions": int(prev_w.sum()),
             "clients_interrupted": int((wb["count"] > 0).sum()),
@@ -236,6 +254,20 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                                        for c in curves.values() if c["verdict"] == "free"] or [0]), 1),
             "no_free_stretch": [r.rule_id for r in ds.rules if curves[r.rule_id]["verdict"] == "none"],
         }
+
+    # ------------------------------------------------------------ trend
+    legit_prev = base.prevailing & legit
+    buckets = []
+    for k in range(12):
+        end = ds.as_of - (11 - k) * 30 * 24
+        m = legit_prev & (ds.hit_t >= end - 30 * 24) & (ds.hit_t < end)
+        by_rule = np.bincount(ds.hit_rule[m], minlength=len(ds.rules))
+        buckets.append({"start": iso(end - 30 * 24), "end": iso(end), "n": int(m.sum()),
+                        "established": int((m & established[ds.hit_client]).sum()),
+                        "by_rule": {ds.rules[i].rule_id: int(v) for i, v in enumerate(by_rule) if v}})
+    trend = {"buckets": buckets,
+             "launches": [{"rule_id": r.rule_id, "date": r.live_since} for r in ds.rules
+                          if not r.shadow and r.live_from >= ds.as_of - 360 * 24]}
 
     # ------------------------------------------------------------ rules
     rules_out = []
@@ -280,6 +312,7 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
 
     # ------------------------------------------------------------ timelines
     action_code = {"PREVAILED": "P", "CONTRIBUTING": "C", "SHADOW": "S", "OVERRIDDEN": "O"}
+    c_weight, c_hold, c_recency = index.components(ds, w)
     timelines = {c["client_id"]: [] for c in ds.clients}
     for h in np.argsort(ds.hit_t):
         rule = ds.rules[ds.hit_rule[h]]
@@ -293,6 +326,8 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
             "o": str(ds.hit_final[h]), "x": int(ds.hit_fraud[h]),
             "v": None if np.isnan(val) else _r(val, 3), "k": _r(ds.hit_hours[h], 1),
             "s": _r(base.F[h, 0], 1) if base.prevailing[h] else 0,
+            **({"w": _r(c_weight[h], 1), "u": _r(c_hold[h], 3), "y": _r(c_recency[h], 3)} if base.prevailing[h] else {}),
+            "$": None if np.isnan(ds.features["amount"][e]) else _r(ds.features["amount"][e], 0),
         })
 
     # Payout amounts per client (for "why this rule keeps firing") and fraud values per rule.
@@ -333,6 +368,7 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                       | {"n_clients": len(inc["clients"])} for inc in ds.incidents],
         "portfolio": portfolio,
         "metrics": metrics,
+        "trend": trend,
     }
 
 

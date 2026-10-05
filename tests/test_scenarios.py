@@ -246,3 +246,40 @@ def test_threshold_is_a_string_edit():
     assert not expression.parse("mcc IN [5967, 7995]").sweepable
     with pytest.raises(ValueError):
         expression.with_threshold("mcc IN [5967]", 1)
+
+
+# ---------------------------------------------------------------- friction ledger
+
+def test_score_breakdown_reproduces_every_clients_points(world):
+    """weight × hold-time factor × recency = points, and points add up to the score."""
+    _, _, res, clients, _ = world
+    start = res["meta"]["windows"]["30d"]["start"]
+    for cid in ("ACME-0417", "NORT-7716", "JUNI-5521", "OAKM-6630"):
+        hits = [h for h in res["timelines"][cid] if h["a"] == "P" and h["t"] >= start]
+        for h in hits:
+            assert abs(h["w"] * h["u"] * h["y"] - h["s"]) < 0.15, (cid, h)
+        assert abs(sum(h["s"] for h in hits) - clients[cid]["windows"]["30d"]["score"][0]) < 0.5
+
+
+def test_ledger_counts_match_the_interventions(world):
+    _, _, res, _, rules = world
+    p = res["portfolio"]["30d"]
+    assert p["ledger"]["n"] == res["trend"]["buckets"][-1]["n"]      # same 30 days, no-fraud interventions
+    assert p["ledger"]["n"] <= p["interventions"]
+    assert p["ledger"]["reviews"] * 0.5 == p["ledger"]["review_hours"]
+    hero = rules["payout_limit_100"]["windows"]["30d"]["curve"]
+    first, flat = hero["points"][0], hero["points"][hero["flat_index"]]
+    assert first["ledger"]["n"] == first["rule_interventions"]
+    assert first["ledger"]["held_usd"] > 0 and first["ledger"]["denied_usd"] > 0
+    assert flat["ledger"]["held_usd"] + flat["ledger"]["denied_usd"] < first["ledger"]["held_usd"] + first["ledger"]["denied_usd"]
+    assert flat["freed"]["usd"] > 0 and flat["fraud_usd_rule"] == first["fraud_usd_rule"]
+
+
+def test_trend_shows_the_hero_rule_launch(world):
+    _, _, res, _, _ = world
+    b = res["trend"]["buckets"]
+    assert len(b) == 12
+    prior = sum(x["n"] for x in b[:-1]) / 11
+    assert b[-1]["n"] > 2 * prior
+    assert max(b[-1]["by_rule"], key=b[-1]["by_rule"].get) == "payout_limit_100"
+    assert {"rule_id": "payout_limit_100", "date": "2026-08-28"} in res["trend"]["launches"]

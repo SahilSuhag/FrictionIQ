@@ -99,6 +99,15 @@ def hit_friction(ds: Dataset, w: Weightings) -> np.ndarray:
     return wt * dur * decay(ds.as_of - ds.hit_t, w)
 
 
+def components(ds: Dataset, w: Weightings) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Each hit's factors under the placeholder weighting (column 0): decision weight,
+    hold-time factor and recency decay. Their product is the hit's friction points."""
+    weight = w.weights[0, ds.hit_rank]
+    hold = np.where(ds.hit_is_hold, duration_factor(ds.hit_hours, w)[:, 0], 1.0)
+    recency = decay(ds.as_of - ds.hit_t, w)[:, 0]
+    return weight, hold, recency
+
+
 def prevailing(ds: Dataset, live: np.ndarray) -> np.ndarray:
     """Attribution by order. Returns a hit mask: one prevailing hit per event with any live hit."""
     idx = np.flatnonzero(live)

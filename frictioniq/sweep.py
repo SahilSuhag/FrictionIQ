@@ -107,6 +107,31 @@ def threshold_grid(ds: Dataset, rule: Rule, steps: int) -> list:
     return grid
 
 
+# Ops effort per manual review. PRD taxonomy: a hold costs 20-40 minutes of ops time.
+REVIEW_HOURS_PER_HOLD = 0.5
+
+
+def ledger(ds: Dataset, mask: np.ndarray, amount: np.ndarray) -> dict:
+    """Friction in measured units for a set of prevailing hits: interventions, clients,
+    dollars of payouts denied or held, days waiting on money, settlement limited, review hours."""
+    payout = ds.event_is_payout[ds.hit_event]
+    dec = ds.hit_decision
+    denied = mask & payout & (dec == "DENY")
+    held = mask & payout & (dec == "HOLD")
+    limited = mask & (dec == "SETTLEMENT_LIMIT")
+    holds = mask & (dec == "HOLD")
+    return {
+        "n": int(mask.sum()),
+        "clients": int(np.unique(ds.hit_client[mask]).size),
+        "denied_n": int(denied.sum()), "denied_usd": round(float(amount[denied].sum()), 0),
+        "held_n": int(held.sum()), "held_usd": round(float(amount[held].sum()), 0),
+        "wait_days": round(float(ds.hit_hours[held].sum() / 24), 1),
+        "limited_n": int(limited.sum()), "limited_usd": round(float(amount[limited].sum()), 0),
+        "reviews": int(holds.sum()),
+        "review_hours": round(float(holds.sum() * REVIEW_HOURS_PER_HOLD), 1),
+    }
+
+
 def _ranges(v: np.ndarray) -> dict:
     """Reference value (column 0) plus the spread across sampled weightings."""
     s = v[1:] if v.size > 1 else v
@@ -132,6 +157,9 @@ class Sweeper:
         self.base_total = self.F[base.prevailing & self.legit & self.win].sum(0)
         self.base_client = self._client_ref(base.prevailing & self.win)
         self.base_events = self._intervened_events(base.prevailing)
+        self.amount = np.nan_to_num(ds.features["amount"][ds.hit_event])
+        m = base.prevailing & self.legit & self.win
+        self.base_hit = dict(zip(ds.hit_event[m].tolist(), np.flatnonzero(m).tolist()))
 
     # -- helpers -------------------------------------------------------
     def _client_ref(self, mask):
@@ -169,6 +197,12 @@ class Sweeper:
         gone_clients = np.unique(ds.event_client[np.array(gone, dtype=np.int64)]) if gone else np.array([], int)
 
         caught_ruleset = np.unique(ds.hit_event[prev & ds.hit_fraud & self.win]).size
+
+        # What the interventions that disappear were costing clients, in measured units.
+        gh = np.array([self.base_hit[e] for e in gone], dtype=np.int64)
+        freed_mask = np.zeros(ds.n_hits, dtype=bool)
+        freed_mask[gh] = True
+        fl = ledger(ds, freed_mask, self.amount)
         client_now = self._client_ref(prev & self.win)
         delta = client_now - self.base_client
 
@@ -183,9 +217,15 @@ class Sweeper:
             "clients_above_p75": int((client_now > self.p75).sum()),
             "clients_friction_increased": int((delta > 1e-9).sum()),
             "max_client_increase": float(max(0.0, delta.max())),
+            "freed": {"usd": fl["denied_usd"] + fl["held_usd"], "wait_days": fl["wait_days"],
+                      "review_hours": fl["review_hours"]},
         }
         if rule is not None:
             out["fraud_caught_rule"] = self.fraud_caught_by(rule, removed)
+            fm = (ds.hit_rule == rule.idx) & ~ds.hit_overridden & ds.hit_fraud & ~removed & self.win
+            ev = np.unique(ds.hit_event[fm])
+            out["fraud_usd_rule"] = round(float(np.nansum(ds.features["amount"][ev])), 0)
+            out["ledger"] = ledger(ds, prev & self.legit & self.win & (ds.hit_rule == rule.idx), self.amount)
             r_mask = ds.hit_rule == rule.idx
             rule_base = F[self.base.prevailing & self.legit & self.win & r_mask].sum(0)
             with np.errstate(invalid="ignore", divide="ignore"):
