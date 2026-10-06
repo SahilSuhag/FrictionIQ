@@ -325,8 +325,8 @@
         ${metric("Payouts held or denied", fmtUsd(usdNow), delta(usdNow, usdPrev), "no earlier period in the data", ` ${info("ledger", "About these figures")}`)}
         ${metric("Payout hold time", `${fmtInt(L.wait_days)} days`, prev ? delta(L.wait_days, prev.ledger.wait_days) : "", "across held payouts", ` ${info("hold", "What payout hold time means")}`)}
         ${metric("Good clients, heavy friction", fmtInt(P.good_clients_heavy_friction), "", `of ${fmtInt(est)} established, graded ${HEAVY.join(" or ")}`, ` ${info("score", "How the friction score works")}`)}
-        ${metric("Fraud saved", fmtUsd(F.caught_usd), delta(F.caught_usd, FP && FP.caught_usd, false), `${fmtInt(F.caught)} of ${fmtInt(F.total)} cases`, ` ${info("saved", "What counts as fraud saved")}`, "split")}
-        ${metric("Fraud loss", fmtUsd(F.lost_usd), delta(F.lost_usd, FP && FP.lost_usd), `${fmtInt(F.total - F.caught)} cases no rule stopped`, ` ${info("lost", "What counts as fraud loss")}`)}
+        ${metric("Fraud saved", fmtUsd(F.caught_usd), delta(F.caught_usd, FP && FP.caught_usd, false), `${fmtInt(F.caught)} of ${fmtInt(F.total)} cases`, ` ${info("saved", "What counts as fraud saved")}`, "split fraud")}
+        ${metric("Fraud loss", fmtUsd(F.lost_usd), delta(F.lost_usd, FP && FP.lost_usd), `${fmtInt(F.total - F.caught)} cases no rule stopped`, ` ${info("lost", "What counts as fraud loss")}`, "fraud")}
       </div>
       <div class="home-top">
         ${bannerSection()}
@@ -944,9 +944,13 @@
       const a = xs(today), b = xs(fraudEdge);
       el("rect", { x: Math.min(a, b), y: m.t, width: Math.abs(b - a), height: H - m.t - m.b, fill: "var(--free-wash)" }, svg);
       const nf = txt(svg, (a + b) / 2, m.t - 6, "no fraud ever seen here", { "text-anchor": "middle" });
+      const cf = txt(svg, xs(up ? hi : lo) + (up ? -2 : 2), m.t - 6, "confirmed fraud", { "text-anchor": up ? "end" : "start" });
+      // keep the two labels apart: shorten the first if they touch, then slide it clear
+      const gap = () => { const n = nf.getBBox(), c = cf.getBBox(); return up ? c.x - 8 - (n.x + n.width) : n.x - 8 - (c.x + c.width); };
+      if (gap() < 0) nf.textContent = "no fraud seen";
+      if (gap() < 0) nf.setAttribute("x", +nf.getAttribute("x") + (up ? gap() : -gap()));
       const nb = nf.getBBox();
-      if (nb.x < m.l) nf.setAttribute("x", (a + b) / 2 + (m.l - nb.x));
-      txt(svg, xs(up ? hi : lo) + (up ? -2 : 2), m.t - 6, "confirmed fraud", { "text-anchor": up ? "end" : "start" });
+      if (nb.x < m.l) nf.setAttribute("x", +nf.getAttribute("x") + (m.l - nb.x));
     }
     el("line", { x1: xs(today), x2: xs(today), y1: m.t - 2, y2: H - m.b, stroke: "var(--ink)", "stroke-width": 2 }, svg);
     if (proposed != null) el("line", { x1: xs(proposed), x2: xs(proposed), y1: m.t, y2: H - m.b, stroke: "var(--ink)", "stroke-width": 1.5, "stroke-dasharray": "2 3" }, svg);
@@ -1054,7 +1058,6 @@
         <p class="pane-note pane-foot">Tags: how far each rule can be loosened without missing fraud ${info("relax")}</p></div>`;
 
     pane.scrollTop = keep;
-    showCurrent(pane);
     wireInfo(pane);
     document.getElementById("rule-pane-toggle").onclick = () => { state.rulePaneOpen = false; renderRule(); };
     const q = document.getElementById("rule-q");

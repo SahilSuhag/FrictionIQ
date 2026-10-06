@@ -35,13 +35,13 @@ window selector and the threshold slider respond instantly.
 
 ## The screens
 
-They follow the Figma designs' layout and content, in Manrope, with white cards on a light grey
-page. Colours: orange `#F29F67` for friction, the rule at fault and highlights; dark navy `#1E1E2C`
-for text, buttons and the headline card; blue `#3B8FF3` for fraud (fraud saved and lost, fraud still
-caught); teal `#34B1AA` for "Safe to relax" and mustard `#E0B50F` for "Little to gain". Changes
-against the previous window are red when worse and teal when better. The A–F grade colours stay as
-the mock has them, including the tints in the count grid. Each screen has a 30 days / 60 days /
-1 year window.
+They follow the Figma designs' layout and content, in Nunito, with white rounded cards on a pale
+lavender page. Colours: indigo `#4B49AC` for friction, the rule at fault, actions and the headline
+card, with light blue `#98BDFF` for quieter friction data; coral `#F3797E` for fraud (fraud saved
+and lost, fraud still caught); blue `#7DA0FA` for "Safe to relax" and periwinkle `#7978E9` for
+"Little to gain". Changes against the previous window are coral when worse and blue when better.
+The A–F grade colours stay as the mock has them, including the tints in the count grid. Each
+screen has a 30 days / 60 days / 1 year window.
 
 Each screen is kept to a few headline numbers. Every concept is shown once, and supporting detail
 sits behind a disclosure (**Details**, **How it's calculated**, **Method and success metrics**).
