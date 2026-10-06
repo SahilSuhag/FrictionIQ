@@ -12,7 +12,7 @@ import os
 
 import numpy as np
 
-from contract.schema import DECISION_RANK
+from contract.schema import CLIENT_TYPES, DECISION_RANK, MCC
 
 from . import bands, index, sweep
 from .data import Dataset, iso
@@ -41,7 +41,7 @@ def grade_of(score: float, cfg: dict) -> str:
 def _compact_point(p: dict) -> dict:
     keep = ("interventions_removed", "clients_affected", "established_clients_affected", "fraud_caught_rule",
             "fraud_caught_ruleset", "clients_above_p75", "clients_friction_increased", "rule_interventions",
-            "rule_interventions_all",
+            "rule_interventions_all", "fraud_prevailing_rule", "by_group",
             "example_interventions", "interventions_reattributed")
     out = {k: p[k] for k in keep if k in p}
     for k in ("ledger", "freed", "fraud_usd_rule"):
@@ -50,6 +50,28 @@ def _compact_point(p: dict) -> dict:
     pr = p.get("pct_of_rule")
     if pr:
         out["pct"] = [_r(pr["ref"], 1), _r(pr["p5"], 1), _r(pr["p95"], 1)]
+    return out
+
+
+def _group_flat(points: list) -> list:
+    """Per client type, the last setting that still catches all of that type's fraud the rule catches today."""
+    out = []
+    for k in range(len(points[0].get("by_group") or [])):
+        base, flat = points[0]["by_group"][k][1], 0
+        for i, p in enumerate(points):
+            if p["by_group"][k][1] < base:
+                break
+            flat = i
+        out.append(flat)
+    return out
+
+
+def _action_row(a: dict) -> dict:
+    out = {"type": a["action_type"], "detail": a.get("detail") or None, "start": a["started_at"],
+           "end": a["ended_at"] or None, "outcome": a.get("outcome") or None}
+    for k in ("reserve_pct", "reserve_cap_usd", "held_usd", "recovered_usd"):
+        if a.get(k) not in (None, ""):
+            out[k] = _r(float(a[k]), 0)
     return out
 
 
@@ -66,6 +88,16 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
     demo_client = ds.client_index.get(demo.get("open_client", ""), None)
 
     grids = {r.rule_id: sweep.threshold_grid(ds, r, cfg["threshold_steps"]) for r in ds.rules}
+    # client type per client: rule curves are also cut by it
+    client_group = np.array([CLIENT_TYPES.index(c.get("client_type") or c["segment"]) for c in ds.clients])
+    amt_ev = np.nan_to_num(ds.features["amount"])
+    rec_by_event = {}
+    for a in ds.account_actions:
+        if a["action_type"] == "RECOVERY" and a.get("event_id") in ds.event_index:
+            rec_by_event[ds.event_index[a["event_id"]]] = float(a["recovered_usd"] or 0)
+    rec_ev = np.zeros(ds.n_events)
+    for e, v in rec_by_event.items():
+        rec_ev[e] = v
     rule_windows = {r.rule_id: {} for r in ds.rules}
     portfolio, metrics, client_windows = {}, {}, [dict() for _ in range(ds.n_clients)]
 
@@ -75,7 +107,7 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
         ref = scores[:, 0]
         p75 = float(np.percentile(ref, cfg["high_friction_percentile"]))
         eligible = established & (ref > p75)
-        sw = sweep.Sweeper(ds, base, days, band_of, eligible, p75, cfg)
+        sw = sweep.Sweeper(ds, base, days, band_of, eligible, p75, cfg, client_group, len(CLIENT_TYPES))
         prev_w = base.prevailing & wb["mask"]
 
         # ------------------------------------------------------------- rules
@@ -109,6 +141,8 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                     "label": curve["label"],
                     "recommended_index": curve["recommended_index"],
                     "base_fraud_caught_rule": curve["base_fraud_caught_rule"],
+                    # per client type: how far the rule can be relaxed before it misses that type's fraud
+                    "group_flat": _group_flat(curve["points"]),
                 },
                 "example": None if ex is None else {
                     "client_id": ds.clients[ex]["client_id"], "name": ds.clients[ex]["client_name"],
@@ -122,12 +156,37 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
             removed_all |= curves[r.rule_id]["removed_at_flat"]
         ra = sw.evaluate(removed_all, detail=True)
         prev_after, client_after = ra.pop("_prevailing"), ra.pop("_client")
+        ra.pop("_gone_hits")
         # The headline is the cautious version: the same rules moved only to their recommended
         # setting, and only for good clients carrying heavy friction (the segment policy).
         removed_good = np.zeros(ds.n_hits, dtype=bool)
         for r in relax:
             removed_good |= curves[r.rule_id]["removed_at_recommended"]
-        rg = sw.evaluate(removed_good & eligible[ds.hit_client])
+        rg = sw.evaluate(removed_good & eligible[ds.hit_client], detail=True)
+        rg.pop("_prevailing"), rg.pop("_client")
+        gone_good = rg.pop("_gone_hits")
+        safe_n = np.bincount(ds.hit_client[gone_good], minlength=ds.n_clients)
+        pay_gone = gone_good[ds.event_is_payout[ds.hit_event[gone_good]] & np.isin(ds.hit_decision[gone_good], ["DENY", "HOLD"])]
+        safe_usd = np.bincount(ds.hit_client[pay_gone], weights=amt_ev[ds.hit_event[pay_gone]], minlength=ds.n_clients)
+
+        # per client, so the Home page can be cut by client type and region without recomputing
+        start = ds.as_of - days * 24
+        prev_lo = ds.as_of - 2 * days * 24
+
+        def fraud_by_client(lo, hi):
+            ev = ds.event_fraud & (ds.event_t >= lo) & (ds.event_t < hi)
+            caught = np.unique(ds.hit_event[base.prevailing & ds.hit_fraud & (ds.hit_t >= lo) & (ds.hit_t < hi)])
+            cm = np.zeros(ds.n_events, dtype=bool)
+            cm[caught[ev[caught]]] = True
+            lost = ev & ~cm
+            bc = lambda m, w=None: np.bincount(ds.event_client[m], weights=None if w is None else w[m], minlength=ds.n_clients)
+            return bc(cm), bc(ev), bc(cm, amt_ev), bc(ev, amt_ev), bc(lost, rec_ev)
+
+        f_now, f_prev = fraud_by_client(start, ds.as_of + 1), fraud_by_client(prev_lo, start) if prev_lo >= 0 else None
+        nf_now = np.bincount(ds.hit_client[prev_w & ds.hit_fraud], minlength=ds.n_clients)
+        prev_mask = base.prevailing & (ds.hit_t >= prev_lo) & ~wb["mask"]
+        nf_prev = np.bincount(ds.hit_client[prev_mask & ds.hit_fraud], minlength=ds.n_clients)
+
         est_hits = established[ds.hit_client] & wb["mask"]
         est_before = base.F[base.prevailing & legit & est_hits].sum(0)
         est_after = base.F[prev_after & legit & est_hits].sum(0)
@@ -200,6 +259,12 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                 "heavy": is_heavy,
                 "eligible": bool(eligible[i]),
                 "after_relax": _r(client_after[i], 1),
+                # for the cut-by-client-type view on Home
+                "nf": int(nf_now[i]), "nf_prev": int(nf_prev[i]) if f_prev is not None else None,
+                "fr": [int(f_now[0][i]), int(f_now[1][i]), _r(f_now[2][i], 0), _r(f_now[3][i], 0), _r(f_now[4][i], 0)],
+                "fr_prev": None if f_prev is None else [int(f_prev[0][i]), int(f_prev[1][i]), _r(f_prev[2][i], 0),
+                                                        _r(f_prev[3][i], 0), _r(f_prev[4][i], 0)],
+                "safe": int(safe_n[i]), "safe_usd": _r(safe_usd[i], 0),
             }
 
         # ------------------------------------------------------- portfolio
@@ -213,19 +278,19 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
                 out[k] = out.get(k, 0) + 1
             return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
-        amt_ev = np.nan_to_num(ds.features["amount"])
-
         def fraud_split(start, end):
             """Confirmed fraud in [start, end): stopped by a live rule (saved) or not (lost)."""
             ev = ds.event_fraud & (ds.event_t >= start) & (ds.event_t < end)
             caught = np.unique(ds.hit_event[base.prevailing & ds.hit_fraud & (ds.hit_t >= start) & (ds.hit_t < end)])
             caught = caught[ev[caught]]
             caught_usd, total_usd = _r(amt_ev[caught].sum(), 0), _r(amt_ev[ev].sum(), 0)
+            lost = ev.copy()
+            lost[caught] = False
             # loss from the rounded figures, so saved + loss always equals the total shown
             return {"caught": int(caught.size), "total": int(ev.sum()), "caught_usd": caught_usd,
-                    "total_usd": total_usd, "lost_usd": total_usd - caught_usd}
+                    "total_usd": total_usd, "lost_usd": total_usd - caught_usd,
+                    "recovered_usd": _r(rec_ev[lost].sum(), 0)}
 
-        start = ds.as_of - days * 24
         portfolio[wkey] = {
             "ledger": sweep.ledger(ds, prev_w & legit, amount),
             "fraud": fraud_split(start, ds.as_of + 1),
@@ -327,13 +392,22 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
         order = np.argsort(np.argsort(ten + np.arange(len(idx)) * 1e-6))
         tenure_pos[idx] = (order + 0.5) / max(len(idx), 1)
 
+    actions_by_client = {}
+    for a in ds.account_actions:
+        if a["action_type"] == "RECOVERY" and not float(a.get("recovered_usd") or 0) and a.get("outcome") != "NOT_RECOVERED":
+            continue
+        actions_by_client.setdefault(a["client_id"], []).append(a)
     clients_out = []
     for i, c in enumerate(ds.clients):
         b = band_rows[i]
         ev = b["evidence"]
+        mcc = int(c["mcc"]) if c.get("mcc") else None
         clients_out.append({
             "client_id": c["client_id"], "name": c["client_name"], "entity": c["entity"], "segment": c["segment"],
             "type": c.get("client_type") or c["segment"], "region": c.get("region") or None,
+            "ecid": c.get("ecid") or None, "country": c.get("processing_country") or None,
+            "mcc": mcc, "mcc_desc": MCC[mcc][0] if mcc in MCC else None, "industry": MCC[mcc][1] if mcc in MCC else None,
+            "actions": [_action_row(a) for a in actions_by_client.get(c["client_id"], [])],
             "segment_label": f'{c["entity"].title() if c["entity"] == "DIRECT" else "Payfac"} {SEGMENT_LABELS[c["segment"]]}',
             "tenure_months": c["tenure_months"], "peer_group": c["peer_group"],
             "band": b["band"], "disqualified": b["disqualified"], "unknown": b["unknown"],
@@ -347,6 +421,8 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
     action_code = {"PREVAILED": "P", "CONTRIBUTING": "C", "SHADOW": "S", "OVERRIDDEN": "O"}
     c_weight, c_hold, c_recency = index.components(ds, w)
     timelines = {c["client_id"]: [] for c in ds.clients}
+    CH_CODE = {"POS_INITIATED": "P", "MERCHANT_KEYED_IN": "K", "CARD_NOT_PRESENT": "O"}
+    used_subs = set()
     for h in np.argsort(ds.hit_t):
         rule = ds.rules[ds.hit_rule[h]]
         e = ds.hit_event[h]
@@ -361,7 +437,13 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
             "s": _r(base.F[h, 0], 1) if base.prevailing[h] else 0,
             **({"w": _r(c_weight[h], 1), "u": _r(c_hold[h], 3), "y": _r(c_recency[h], 3)} if base.prevailing[h] else {}),
             "$": None if np.isnan(ds.features["amount"][e]) else _r(ds.features["amount"][e], 0),
+            **({"tx": ds.event_tx[e]} if ds.event_tx[e] else {}),
+            **({"ch": CH_CODE[ds.event_channel[e]]} if ds.event_channel[e] else {}),
+            **({"rc": 1} if ds.event_recurring[e] else {}),
+            **({"sm": ds.event_sub[e]} if ds.event_sub[e] else {}),
         })
+        if ds.event_sub[e]:
+            used_subs.add(ds.event_sub[e])
 
     # Payout amounts per client (for "why this rule keeps firing") and fraud values per rule.
     payouts = {}
@@ -395,6 +477,9 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
         "rules": rules_out,
         "clients": clients_out,
         "timelines": timelines,
+        "sub_merchants": {s: {"name": ds.sub_merchants[s]["name"], "status": ds.sub_merchants[s]["status"]}
+                          for s in sorted(used_subs) if s in ds.sub_merchants},
+        "client_types": CLIENT_TYPES,
         "payouts": payouts,
         "fraud_values": fraud_values,
         "incidents": [{k: inc[k] for k in ("incident_id", "start", "end", "severity")}

@@ -144,7 +144,7 @@ class Sweeper:
     """Counterfactual arms for one measurement window."""
 
     def __init__(self, ds: Dataset, base: Baseline, window_days: int, band_of: list[str],
-                 eligible: np.ndarray, p75: float, cfg: dict):
+                 eligible: np.ndarray, p75: float, cfg: dict, groups: np.ndarray | None = None, n_groups: int = 0):
         self.ds, self.base, self.cfg = ds, base, cfg
         self.days = window_days
         self.F = base.F
@@ -153,6 +153,7 @@ class Sweeper:
         self.win_event = ds.event_t >= ds.as_of - window_days * 24
         self.band_of = np.array(band_of)
         self.eligible = eligible            # client mask for the segment policy
+        self.groups, self.n_groups = groups, n_groups   # client type index per client, for per-type curves
         self.p75 = p75
         self.base_total = self.F[base.prevailing & self.legit & self.win].sum(0)
         self.base_client = self._client_ref(base.prevailing & self.win)
@@ -233,9 +234,18 @@ class Sweeper:
             out["pct_of_rule"] = _ranges(pct)
             out["rule_interventions"] = int((prev & self.legit & self.win & r_mask).sum())
             out["rule_interventions_all"] = int((prev & self.win & r_mask).sum())
+            out["fraud_prevailing_rule"] = int((prev & ds.hit_fraud & self.win & r_mask).sum())
+            if self.groups is not None:
+                G = self.n_groups
+                g_gone = np.bincount(self.groups[ds.event_client[np.array(gone, dtype=np.int64)]], minlength=G) \
+                    if gone else np.zeros(G, dtype=int)
+                g_fraud = np.bincount(self.groups[ds.event_client[ev]], minlength=G) if ev.size else np.zeros(G, dtype=int)
+                g_ints = np.bincount(self.groups[ds.hit_client[prev & self.legit & self.win & r_mask]], minlength=G)
+                out["by_group"] = [[int(g_gone[k]), int(g_fraud[k]), int(g_ints[k])] for k in range(G)]
         if detail:
             out["_prevailing"] = prev
             out["_client"] = client_now
+            out["_gone_hits"] = gh
         return out
 
     # -- a whole curve -------------------------------------------------
@@ -251,6 +261,7 @@ class Sweeper:
             if example_client is not None:
                 prev = p.pop("_prevailing")
                 p.pop("_client")
+                p.pop("_gone_hits")
                 p["example_interventions"] = int((prev & self.win & r_mask & (ds.hit_client == example_client)).sum())
             p["threshold"] = t
             points.append(p)

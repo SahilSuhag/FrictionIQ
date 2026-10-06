@@ -333,7 +333,8 @@ def test_rules_have_readable_names_and_card_channels(world):
     assert all("_" not in r["name"] and r["name"] for r in rules.values())
     assert rules["payout_limit_100"]["name"] == "Payout limit $100"
     capture = {rid for rid, r in rules.items() if r["checkpoint"] == "PRE_CAPTURE"}
-    assert capture and all(rules[rid]["channel"] in ("CARD_PRESENT", "CARD_NOT_PRESENT") for rid in capture)
+    assert capture and all(rules[rid]["channel"] in ("CARD_PRESENT", "CARD_NOT_PRESENT", "") for rid in capture)
+    assert rules["geo_mismatch"]["channel"] == "CARD_NOT_PRESENT" and rules["new_device_limit"]["channel"] == ""
     assert all(r["channel"] == "" for rid, r in rules.items() if rid not in capture)
 
 def test_trend_shows_the_hero_rule_launch(world):
@@ -344,3 +345,94 @@ def test_trend_shows_the_hero_rule_launch(world):
     assert b[-1]["n"] > 2 * prior
     assert max(b[-1]["by_rule"], key=b[-1]["by_rule"].get) == "payout_limit_100"
     assert {"rule_id": "payout_limit_100", "date": "2026-08-28"} in res["trend"]["launches"]
+
+
+# ---------------------------------------------------------------- payment API fields
+
+def test_clients_carry_api_references(world):
+    ds, _, res, clients, _ = world
+    ecids = [c["ecid"] for c in res["clients"]]
+    assert all(e and e.isdigit() and len(e) == 9 for e in ecids) and len(set(ecids)) == len(ecids)
+    assert all(c["mcc"] in schema.MCC and c["industry"] == schema.MCC[c["mcc"]][1] for c in res["clients"])
+    region_of = {"CAN": "CA", "USA": "US", "GBR": "EMEA", "DEU": "EMEA", "FRA": "EMEA", "IRL": "EMEA",
+                 "AUS": "APAC", "SGP": "APAC", "JPN": "APAC"}
+    assert all(region_of[c["country"]] == c["region"] for c in res["clients"])
+    assert all(c["mcc"] == 7372 for c in res["clients"] if c["entity"] == "PAYFAC")
+
+
+def test_card_channels_agree_with_the_rules(world):
+    ds, *_ = world
+    cap = ds.event_request == "CAPTURE"
+    assert set(ds.event_channel[cap]) == set(schema.CHANNELS) and (ds.event_channel[~cap] == "").all()
+    assert not (ds.event_recurring & (ds.event_channel != "CARD_NOT_PRESENT")).any()
+    cnp = {r.idx for r in ds.rules if r.channel == "CARD_NOT_PRESENT"}
+    on_cnp = np.isin(ds.hit_rule, list(cnp))
+    assert set(ds.event_channel[ds.hit_event[on_cnp]]) <= schema.RULE_CHANNEL_MATCHES["CARD_NOT_PRESENT"]
+    # enforcing channels changes nothing at today's settings: every logged hit still fires
+    for r in ds.rules:
+        if r.channel:
+            fires = ds.evaluate(r)
+            assert fires[ds.hit_event[ds.hit_rule == r.idx]].all(), r.rule_id
+    assert all(ds.event_tx[e] for e in np.flatnonzero(ds.event_request != "SUBMERCHANT_BOARDING")[:500])
+
+
+def test_retried_requests_count_once(world, tmp_path):
+    import csv
+    import shutil
+    ds, *_ = world
+    src = ds.data_dir
+    for f in os.listdir(src):
+        shutil.copy(os.path.join(src, f), tmp_path / f)
+    with open(tmp_path / "decision_events.csv") as f:
+        rows = list(csv.DictReader(f))
+    dup = dict(rows[100], event_id="EV-RETRY1")           # same idempotency key, a new event ID
+    with open(tmp_path / "decision_events.csv", "a", newline="") as f:
+        csv.DictWriter(f, fieldnames=list(rows[0])).writerow(dup)
+    with open(tmp_path / "rule_hits.csv") as f:
+        hits = list(csv.DictReader(f))
+    with open(tmp_path / "rule_hits.csv", "a", newline="") as f:
+        csv.DictWriter(f, fieldnames=list(hits[0])).writerow(dict(hits[0], hit_id="HT-RETRY1", event_id="EV-RETRY1"))
+    again = Dataset(str(tmp_path))
+    assert again.n_events == ds.n_events and again.n_hits == ds.n_hits
+    assert again.dropped_events == {"EV-RETRY1"}
+
+
+def test_home_cut_adds_up_to_the_portfolio(world):
+    _, _, res, _, _ = world
+    for wkey in ("30d", "1y"):
+        P, C = res["portfolio"][wkey], [c["windows"][wkey] for c in res["clients"]]
+        assert sum(c["n"] for c in C) == P["interventions"]
+        assert sum(c["nf"] for c in C) == P["interventions"] - P["ledger"]["n"]
+        assert sum(c["safe"] for c in C) == P["free_to_remove"]
+        assert sum(c["fr"][0] for c in C) == P["fraud"]["caught"] and sum(c["fr"][1] for c in C) == P["fraud"]["total"]
+        assert abs(sum(c["fr"][2] for c in C) - P["fraud"]["caught_usd"]) <= len(C)       # per-client rounding
+        assert abs(sum(c["fr"][4] for c in C) - P["fraud"]["recovered_usd"]) <= len(C)
+        assert 0 < P["fraud"]["recovered_usd"] < P["fraud"]["lost_usd"]
+
+
+def test_account_actions(world):
+    ds, _, res, _, _ = world
+    as_of = res["meta"]["as_of"]
+    acts = [a for c in res["clients"] for a in c["actions"]]
+    assert {a["type"] for a in acts} >= {"ACCOUNT_REVIEW", "CAPABILITY_RESTRICTION", "RESERVE", "RECOVERY"}
+    assert any(a["type"] == "RESERVE" and not a["end"] for a in acts)
+    good_open = {c["client_id"] for c in res["clients"] if c["band"] == "established"
+                 for a in c["actions"] if a["type"] != "RECOVERY" and (not a["end"] or a["end"] > as_of)}
+    assert good_open
+    # recoveries chase only fraud no rule stopped
+    caught = set(ds.hit_event[ds.hit_fraud & (ds.hit_action == "PREVAILED")].tolist())
+    for a in ds.account_actions:
+        if a["action_type"] == "RECOVERY":
+            assert ds.event_index[a["event_id"]] not in caught
+
+
+def test_rule_curves_by_client_type_add_up(world):
+    *_, rules = world
+    for r in rules.values():
+        for p in r["windows"]["30d"]["curve"]["points"]:
+            g = p["by_group"]
+            assert sum(x[0] for x in g) == p["interventions_removed"]
+            assert sum(x[1] for x in g) == p["fraud_caught_rule"]
+    hero = rules["payout_limit_100"]["windows"]["30d"]["curve"]
+    smb = schema.CLIENT_TYPES.index("SMB")
+    assert rules["payout_limit_100"]["grid"][hero["group_flat"][smb]] == 1800

@@ -38,7 +38,7 @@ RULES = [
      "Denies a capture batch whose ticket size is far outside the client's own pattern."),
     ("new_device_limit", "ALL", "CAPTURE", "device", "new_device",
      "SETTLEMENT_LIMIT", "device_age_hours < 72", "OFF", "PRE_CAPTURE", 30, "2024-02-12",
-     "Limits settlement on captures from a device first seen less than 72 hours ago."),
+     "Limits settlement on captures from a device (a terminal, or the shopper's device online) first seen less than 72 hours ago."),
     ("payout_limit_50_shadow", "DIRECT", "PAYOUT|INSTANT_PAYOUT", "payout_risk", "payout_size",
      "DENY_OR_HOLD", "amount > 50", "ON", "PRE_PAYOUT", 25, "2026-09-01",
      "Shadow test of a $50 payout cap: logs what it would deny or hold, acts on nothing."),
@@ -60,10 +60,11 @@ NAMES = {
 }
 
 # Card channel for rules at card checkpoints. Metadata only: it does not change when a rule fires.
+# Card rules bound to one channel. new_device_limit runs on both: a terminal, or the shopper's
+# device fingerprint online.
 CHANNELS = {
     "geo_mismatch": "CARD_NOT_PRESENT",
     "card_testing_deny": "CARD_NOT_PRESENT",
-    "new_device_limit": "CARD_PRESENT",
 }
 
 RULESETS = {

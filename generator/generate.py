@@ -18,7 +18,7 @@ from datetime import timedelta
 
 from contract import schema
 
-from . import engine, registry, scenarios
+from . import engine, enrich, registry, scenarios
 from .world import (_EPOCH, BACKGROUND_MIX, EDGE_CASES, FRAUD_TYPES, WINDOW_HOURS, Client, archetype_params, at,
                     background_events, client_id_for, derive_timeline_features, edge_fraud, fictional_names,
                     fraud_episode)
@@ -127,7 +127,7 @@ def build_world(seed: int):
     for ev in events:
         if ev.fraud_type:
             confirmed = min(ev.t + rng.uniform(24, 240), WINDOW_HOURS - 1)
-            fraud_cases.append({"client_id": ev.client_id, "event_id": ev.event_id,
+            fraud_cases.append({"client_id": ev.client_id, "event_id": ev.event_id, "confirmed_h": confirmed,
                                 "confirmed_at": ts(confirmed), "fraud_type": ev.fraud_type})
     for i, fc in enumerate(fraud_cases):
         fc["case_id"] = f"FC-{i + 1:04d}"
@@ -141,7 +141,13 @@ def build_world(seed: int):
     for i, d in enumerate(disputes):
         d["dispute_id"] = f"DS-{i + 1:04d}"
 
-    return clients, events, hits, incidents, fraud_cases, disputes
+    # Payment API fields and account-level actions: added after everything above, from hashes and
+    # their own random stream, so none of it moves a single value of the world above.
+    enrich.assign_event_fields(clients, events, hits)
+    actions = enrich.account_actions(seed, clients, events, hits, fraud_cases, ts)
+    subs = enrich.sub_merchant_rows(clients, events)
+
+    return clients, events, hits, incidents, fraud_cases, disputes, actions, subs
 
 
 # Region and client type are drawn from a hash of the client ID rather than the seeded RNG, so
@@ -186,18 +192,21 @@ def main(argv=None):
     ap.add_argument("--out", default="data")
     args = ap.parse_args(argv)
 
-    clients, events, hits, incidents, fraud_cases, disputes = build_world(args.seed)
+    clients, events, hits, incidents, fraud_cases, disputes, actions, subs = build_world(args.seed)
     os.makedirs(args.out, exist_ok=True)
 
     write_csv(os.path.join(args.out, "rules.csv"), schema.RULE_FIELDS, registry.rule_rows())
     write_csv(os.path.join(args.out, "ruleset_bindings.csv"), schema.RULESET_BINDING_FIELDS,
               registry.binding_rows())
     write_csv(os.path.join(args.out, "clients.csv"), schema.CLIENT_FIELDS,
-              [{**vars(c), "client_type": client_type_of(c), "region": region_of(c)}
+              [{**vars(c), "client_type": client_type_of(c), "region": region_of(c), "ecid": enrich.ecid_of(c),
+                "mcc": enrich.mcc_of(c), "processing_country": enrich.country_of(c.client_id, region_of(c))}
                for c in sorted(clients.values(), key=lambda c: c.client_id)])
     write_csv(os.path.join(args.out, "decision_events.csv"), schema.DECISION_EVENT_FIELDS,
               [{"event_id": e.event_id, "client_id": e.client_id, "checkpoint": e.checkpoint,
-                "request_type": e.request_type, "occurred_at": ts(e.t), **e.features} for e in events])
+                "request_type": e.request_type, "occurred_at": ts(e.t), "transaction_id": e.transaction_id,
+                "idempotency_key": e.idempotency_key, "channel": e.channel, "is_recurring": e.is_recurring,
+                "sub_merchant_id": e.sub_merchant_id, **e.features} for e in events])
     hit_rows = []
     for i, h in enumerate(sorted(hits, key=lambda h: (h["t"], h["event_id"], h["rule_id"]))):
         hit_rows.append({"hit_id": f"HT-{i + 1:06d}", "rule_id": h["rule_id"], "client_id": h["client_id"],
@@ -208,6 +217,8 @@ def main(argv=None):
     write_csv(os.path.join(args.out, "incidents.csv"), schema.INCIDENT_FIELDS, incidents)
     write_csv(os.path.join(args.out, "fraud_cases.csv"), schema.FRAUD_CASE_FIELDS, fraud_cases)
     write_csv(os.path.join(args.out, "disputes.csv"), schema.DISPUTE_FIELDS, disputes)
+    write_csv(os.path.join(args.out, "sub_merchants.csv"), schema.SUB_MERCHANT_FIELDS, subs)
+    write_csv(os.path.join(args.out, "account_actions.csv"), schema.ACCOUNT_ACTION_FIELDS, actions)
 
     last30 = WINDOW_HOURS - 30 * 24
     manifest = {
@@ -227,6 +238,8 @@ def main(argv=None):
             "fraud_cases": len(fraud_cases),
             "fraud_cases_30d": sum(1 for e in events if e.fraud_type and e.t >= last30),
             "disputes": len(disputes),
+            "sub_merchants": len(subs),
+            "account_actions": len(actions),
         },
     }
     with open(os.path.join(args.out, "manifest.json"), "w") as f:

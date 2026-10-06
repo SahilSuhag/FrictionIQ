@@ -40,20 +40,22 @@ soft shadows on a light grey page, Liberty Blue `#0C1629` for text, buttons, the
 and the headline card, and Kinder grey `#B5C1C8` for quieter data. The data keeps its own colours:
 indigo `#4B49AC` for friction and the rule at fault, coral for fraud (fraud saved and lost, fraud
 still caught), blue for "Safe to relax" and periwinkle for "Little to gain", coral for worse
-changes and blue for better ones. The A–F grades run from navy (A, least friction) through
-slate and amber to maroon (F, most friction); they are set in `config/frictioniq.json`, and the
-count grid uses a light tint of each. Headline metrics are tiles with an icon, the value, its
-change in a pill and a 12-month sparkline or a meter; clients carry initials avatars tinted by
-grade. Each screen has a 30 days / 60 days / 1 year window.
+changes and blue for better ones, green for fraud saved. The A–F grades run from navy (A, least
+friction) through slate and amber to maroon (F, most friction); they are set in
+`config/frictioniq.json`. Friction levels on Home use super-soft pastels (rose for heavy, sand for
+moderate, mist for light) with dark text. The headline row is one bright-blue hero tile and four
+compact tiles, each with an icon, the value, its change in a pill and a 12-month sparkline;
+clients carry initials avatars tinted by grade. Each screen has a 30 days / 60 days / 1 year
+window.
 
 Each screen is kept to a few headline numbers. Every concept is shown once, and supporting detail
 sits behind a disclosure (**Details**, **How it's calculated**, **Method and success metrics**).
 
 | Screen | Answers | What's on it |
 |---|---|---|
-| **Home** (portfolio) | How big is this, and where do I look first? | A row of six headline metrics, each with its change against the previous window: interventions, payouts held or denied, payout hold time, good clients with heavy friction, then **fraud saved** and **fraud loss**; one key finding, the 12-month trend and the rule behind it, beside two infographic cards: **safe to remove** (a cautious count of interventions on good clients that can go with no fraud lost, as a share of all; see below) and two rings showing the fraud cases caught two ways: as a share of all interventions (7.5%, about 1 in 13 found fraud) and as a share of all fraud (92.2% caught); a count grid of clients by friction grade (A–F rows, each tinted in its grade colour, with each grade's client total and share and its interventions and share of all interventions) and good-client band (columns). Click any number and the list of those clients opens under the grid, with the number kept highlighted: transactions, transaction value, interventions and the rule causing most; good clients to look at first; one table of the rules causing the most friction (interventions, fraud cases caught, their ratio, payouts held or denied, room to relax), with the highest ratio and the costliest rule highlighted |
-| **Client friction detail**, with the client pane | Is this good client being over-challenged, and by which rule? | On the left, a collapsible pane of every client grouped by friction grade (F to A), filterable by good-client history, client type (Enterprise, Middle Market, SMB, ISV, Scotia) and region (CA, US, EMEA, APAC), with a name or ID search; each entry shows its score, history, type and region. Picking a client switches the view; the Clients tab opens on the good (established) client with the most friction. The view itself: one-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); payout hold time (how long its payouts sat on hold for review, added up); payouts denied; share from the top rule; percentile among similar clients; one timeline lane per rule; intervention log with the points each intervention adds and the total; good-client evidence; "why this rule keeps firing" plot; how the score is calculated, collapsed until asked for |
-| **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Each rule by its readable name, with its one-line description under the title. On the left, a collapsible pane of rules grouped by checkpoint (client onboarding, product onboarding, pre-auth and pre-capture card present or not present, pre-settlement, pre-payout), filterable by checkpoint, client type and region, with a search; each rule shows its description, interventions and room-to-relax tag. Client type and region keep the rules that intervened on those clients in the window, with their counts for those clients; the curve and numbers stay portfolio-wide; the curve (friction removed as a band across weightings, fraud still caught as a line, the safe range shaded and named); a threshold slider aligned under the x-axis (or type a value); three numbers against today (interventions removed, payouts no longer held or denied, fraud still caught); the plain-language sentence; a shadow-test proposal you can draft and copy. **Details** holds the full dollar ledger, the option to apply the change only to established high-friction clients, and the method |
+| **Home** (portfolio) | How big is this, and where do I look first? | **Client type** and **Region** filters beside the window; every figure below follows them. A hero tile, **safe to remove**: the share of interventions that can go with no fraud lost (10.9%; a cautious figure, see below). Four compact tiles against the previous window: interventions (with the rate per 1,000 transactions), **found fraud** as "1 in 13" interventions, **fraud saved** (green) and **fraud loss** (with what was recovered and the net). One key finding with the 12-month trend and the rule behind it. The **top 5 rules causing the most friction** (interventions, fraud cases caught, their ratio, payouts held or denied, room to relax; "See all" for the rest), with the highest ratio and the costliest rule highlighted. **Is friction landing on the right clients?**: one stacked bar per client group (new, partly proven, tenured, and confirmed fraud for contrast), split into heavy, moderate and light friction, with interventions per client; the tenured clients' heavy-friction segment is marked "Look here", and clicking any segment lists those clients under the chart (transactions, value, interventions, the rule causing most). Good clients to look at first: the tenured clients with heavy friction |
+| **Client friction detail**, with the client pane | Is this good client being over-challenged, and by which rule? | On the left, a collapsible pane of every client grouped by friction grade (F to A), filterable by good-client history (tenured, partly proven, new, confirmed fraud), client type (Enterprise, Middle Market, SMB, ISV, Scotia), region (CA, US, EMEA, APAC) and industry, with a search by name, client ID or **ECID**. Picking a client switches the view; the Clients tab opens on the tenured client with the most friction. The view itself: reference chips (**ECID** with a copy button, client ID, MCC and its description, processing country); one-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); payout hold time; payouts denied; share from the top rule; percentile among similar clients in the same industry; one timeline lane per rule; intervention log (each row with its transaction ID, its channel and recurring flag for card payments, and the sub-merchant for ISVs) with the points each intervention adds and the total; good-client evidence; account-level actions (reserves, capability restrictions, account reviews, blocks, recoveries: shown, not scored); "why this rule keeps firing" plot, which suggests the rule's recommended setting or, when that would not help this client, the first setting inside the safe range that does; for ISVs, the sub-merchants carrying the friction; how the score is calculated, collapsed until asked for |
+| **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Each rule by its readable name, with its one-line description under the title. On the left, a collapsible pane of rules grouped by checkpoint (client onboarding, product onboarding, pre-auth and pre-capture card present or not present, pre-capture on both channels, pre-settlement, pre-payout), filterable by checkpoint, client type and region, with a search. The curve (friction removed as a band across weightings, fraud still caught as a line, the safe range shaded and named); a threshold slider aligned under the x-axis (or type a value); three numbers against today (interventions removed, payouts no longer held or denied, fraud still caught); the plain-language sentence. **By client type**: where each type's fraud starts and what the current setting does for each (for Payout limit $100, SMB is safe to $1,800 while Scotia shows no fraud on the rule), with a caution that one window is not proof. For amount rules, a **softer option**: hold only the part of the payout above the threshold and settle the rest (at $500: $46k more released to good clients, $2,500 of fraud let through). A shadow-test proposal you can draft and copy. **Details** holds the full dollar ledger, the option to apply the change only to tenured high-friction clients, and the method |
 
 ## Friction, counted (the differentiator)
 
@@ -66,14 +68,15 @@ compiles it in two ways that appear throughout the screens:
   window. Two fraud metrics sit beneath them, also against the previous window:
   - **Fraud saved**: confirmed fraud a live rule denied or held, in dollars (the payout,
     settlement or capture it was on), with the count of cases ($1.38M, 95 of 103 cases).
-  - **Fraud loss**: confirmed fraud no live rule stopped ($197k, 8 cases).
+  - **Fraud loss**: confirmed fraud no live rule stopped ($197k, 8 cases), with what was
+    recovered afterwards ($94k) and the net loss ($103k).
 
   Together they make up all confirmed fraud in the window. Cases with no amount, such as
   boarding fraud, count as cases but add no dollars.
 
   **Safe to remove** is deliberately cautious, for an audience that owns the fraud numbers. The 7
   rules with room to relax move only to their *recommended* setting (not the far end of their
-  safe range), and only for good clients carrying heavy friction: established clients above the
+  safe range), and only for good clients carrying heavy friction: tenured clients above the
   75th percentile of friction, the same segment policy as the rule page. Everyone else keeps
   today's rules, and every fraud case caught today is still caught: **138 interventions (11%) from
   19 good clients** in the last 30 days. Relaxing every rule as far as is safe for every client
@@ -110,10 +113,11 @@ On seed 4127:
 
 ## The demo (under three minutes)
 
-1. **Home.** In "Who carries the friction", the Established column's E and F cells hold the 12
-   good clients carrying heavy friction. F-graded clients are 8% of clients but receive 23% of
-   interventions. Click the 5 in the E row. Acme
-   Supplies is in the list: 22 transactions, 9 interventions, 7 of them from `payout_limit_100`.
+1. **Home.** 10.9% of interventions can go with no fraud lost. In "Is friction landing on the
+   right clients?", tenured clients carry heavy friction more often than new ones (12% against
+   7%) and get about as many interventions each (3.6 against 3.7). Click the "Look here" segment:
+   12 tenured clients with heavy friction. Acme Supplies is in the list: 22 transactions, 9
+   interventions, 7 of them from `payout_limit_100`.
 2. **Click Acme Supplies.** It has 9 interventions in the last 30 days, 7 of them from
    `payout_limit_100`, and it has never had a confirmed fraud case. That rule went live on Aug 28,
    which is why Acme went from 3 interventions in August to 9 this month. Acme's normal payout is
@@ -133,7 +137,7 @@ On seed 4127:
 | Fraud caught and missed | 95 caught, 8 missed of 103 | 95 caught after relaxing every rule as far as is safe (unchanged) |
 | Safe to remove (the Home headline) | 0 (not measured today) | **138 interventions (11%) from 19 good clients**, fraud caught unchanged |
 | Upper bound: every client, every rule as far as is safe | 0 (not measured today) | 917 interventions from 227 clients, from the 7 rules tagged "Safe to relax" or "Little to gain" |
-| Challenge reduction, established band | current thresholds | established-band friction cut median **81% (80–82%) across 300 weightings** |
+| Challenge reduction, tenured clients | current thresholds | tenured clients' friction cut median **81% (80–82%) across 300 weightings** |
 | Clients above the high-friction line | 78 | 10; **no client's friction rises** |
 | Range width across weightings | n/a | widest spread in a safe range is 15.6 percentage points |
 | Rules to keep as is (relaxing misses fraud) | unknown | `boarding_doc_mismatch`, `payout_velocity_24h`, `device_change_payout` |
@@ -184,8 +188,9 @@ Bands and whiskers on screen are the 5th–95th percentile across these samples.
 
 ### Good-client bands (`frictioniq/bands.py`)
 
-There are three bands: **established**, **developing** and **limited history**. They are built
-from 12 months of evidence that the controls did not create:
+There are three bands, shown on screen as **Tenured** (`established`), **Partly proven**
+(`developing`) and **New** (`limited`); clients with confirmed fraud are shown as their own group.
+They are built from 12 months of evidence that the controls did not create:
 
 - tenure
 - review outcomes: how challenges ended, not whether rules fired
@@ -255,13 +260,36 @@ tests/        PRD scenarios, design labels, invariants
 - New `disputes` table for account standing.
 - The history is now 12 months, Oct 3 2025 to Oct 3 2026, to support the 1-year window.
 - Rules gain a readable `rule_name` (rule_id stays the identifier, used in the shadow-test
-  proposal) and `channel` (CARD_PRESENT or CARD_NOT_PRESENT at the capture checkpoint). The
-  channel is metadata only; it does not change when a rule fires. The synthetic rules sit at
-  four checkpoints, so product onboarding and the pre-auth checkpoints have no rules yet.
+  proposal) and `channel` (CARD_PRESENT or CARD_NOT_PRESENT for a card rule bound to one channel;
+  blank for both). A channel-bound rule only evaluates card payments of its channel. The synthetic
+  rules sit at four checkpoints, so product onboarding and the pre-auth checkpoints have no rules
+  yet.
 - Clients gain `client_type` (ENTERPRISE, MID_MARKET, SMB, ISV, SCOTIA) and `region` (CA, US, EMEA,
   APAC) for the Clients filters. Payfac platforms are ISVs, 15% of direct background clients are
   typed SCOTIA as a placeholder, and the rest keep their segment. Both come from a hash of the
   client ID, not the seeded random generator, so every other generated value is unchanged.
+
+### Fields from the payment API contract (`generator/enrich.py`)
+
+Mapped from the payment API's request and response contracts. All of it is added after the
+rules run, from hashes or its own random stream, so every number above is unchanged.
+
+- Clients gain `ecid` (the API's enterprise customer ID), `mcc` (merchant category code; the
+  contract's `MCC` table maps it to an industry) and `processing_country` (ISO alpha-3; region
+  derives from it).
+- Decision events gain `transaction_id` (links one payment's steps), `idempotency_key` (a retried
+  request with the same key is counted once), `channel` (the API's InitiatorType for card
+  payments: POS_INITIATED, MERCHANT_KEYED_IN, CARD_NOT_PRESENT; keyed-in payments pass the
+  card-not-present checkpoint), `is_recurring` (online card payments) and `sub_merchant_id` (ISV
+  platforms).
+- New table `sub_merchants`: an ISV's sub-merchants and boarding applicants, with a stable ID the
+  contract does not have yet.
+- New table `account_actions` (the API's actions schema): account reviews, capability
+  restrictions (keyed-in, terminal, new product), reserves (percent of daily sales up to a cap),
+  blocks and recoveries. Shown on client pages and, for recoveries, beside fraud loss; **not in
+  the friction score** until their weights are agreed with Risk Strategy.
+- `new_device_limit` now runs on both channels (a terminal, or the shopper's device fingerprint
+  online), so channel labels can agree with every rule that fired.
 
 ## Where this departs from the PRD or the mock
 

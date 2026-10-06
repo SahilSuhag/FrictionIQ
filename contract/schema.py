@@ -24,7 +24,7 @@ RULE_FIELDS = [
     "shadow_setting",    # ON | OFF
     "description",       # added: what the rule does, in words (shown on hover in the client log)
     "live_since",        # added: date the rule went live; it is evaluated only on later events
-    "channel",           # added: CARD_PRESENT | CARD_NOT_PRESENT for card checkpoints, else blank
+    "channel",           # added: CARD_PRESENT | CARD_NOT_PRESENT for a card rule bound to one channel; blank = both
 ]
 
 RULESET_BINDING_FIELDS = ["ruleset_id", "rule_id", "checkpoint", "order"]
@@ -49,6 +49,9 @@ CLIENT_FIELDS = [
     "peer_group",        # may be blank (controlled missingness)
     "client_type",       # ENTERPRISE | MID_MARKET | SMB | ISV | SCOTIA
     "region",            # CA | US | EMEA | APAC
+    "ecid",              # added: the client's enterprise customer ID in the payment API (MerchantEntity.ECID)
+    "mcc",               # added: merchant category code (MerchantData.merchantCategoryCode); see MCC below
+    "processing_country",  # added: ISO 3166 alpha-3 (MerchantEntity.merchantProcessingCountry); region derives from it
 ]
 
 CLIENT_TYPES = ["ENTERPRISE", "MID_MARKET", "SMB", "ISV", "SCOTIA"]
@@ -70,13 +73,27 @@ FEATURES = [
     "device_age_hours",           # age of the capturing device
     "doc_mismatch_score",         # sub-merchant documents vs registry record, 0..1
 ]
-DECISION_EVENT_FIELDS = ["event_id", "client_id", "checkpoint", "request_type", "occurred_at"] + FEATURES
+# added from the payment API request: transaction_id links one payment's steps (auth, capture,
+# refund); idempotency_key collapses retries; channel is InitiatorType (card payments only);
+# is_recurring is TRUE/FALSE for online card payments; sub_merchant_id for ISV platforms.
+DECISION_EVENT_FIELDS = ["event_id", "client_id", "checkpoint", "request_type", "occurred_at",
+                         "transaction_id", "idempotency_key", "channel", "is_recurring",
+                         "sub_merchant_id"] + FEATURES
 
 FRAUD_CASE_FIELDS = ["case_id", "client_id", "event_id", "confirmed_at", "fraud_type"]
 
 # added: account standing for the good-client definition — disputes, chargebacks and
 # reversals are not fraud-rule outputs, which is why they can be evidence.
 DISPUTE_FIELDS = ["dispute_id", "client_id", "opened_at", "kind"]
+
+# added: an ISV platform's sub-merchants (the API's SoftMerchant, given a stable ID) and
+# applicants seen at boarding.
+SUB_MERCHANT_FIELDS = ["sub_merchant_id", "client_id", "name", "mcc", "status"]
+
+# added: account-level actions from the API's Actions schema. One row per action; ended_at is
+# blank while it is open. Reserve fields apply to RESERVE, recovered_usd and event_id to RECOVERY.
+ACCOUNT_ACTION_FIELDS = ["action_id", "client_id", "action_type", "detail", "started_at", "ended_at",
+                         "outcome", "reserve_pct", "reserve_cap_usd", "held_usd", "recovered_usd", "event_id"]
 
 TABLES = {
     "rules": RULE_FIELDS,
@@ -87,6 +104,8 @@ TABLES = {
     "decision_events": DECISION_EVENT_FIELDS,
     "fraud_cases": FRAUD_CASE_FIELDS,
     "disputes": DISPUTE_FIELDS,
+    "sub_merchants": SUB_MERCHANT_FIELDS,
+    "account_actions": ACCOUNT_ACTION_FIELDS,
 }
 
 # ---------------------------------------------------------------------------
@@ -129,6 +148,25 @@ REQUEST_TYPES = ["SUBMERCHANT_BOARDING", "CAPTURE", "SETTLEMENT", "PAYOUT", "INS
 ENTITIES = ["DIRECT", "PAYFAC"]
 SEGMENTS = ["SMB", "MID_MARKET", "ENTERPRISE"]
 INCIDENT_SEVERITIES = ["SEV1", "SEV2", "SEV3"]
+
+# The API's InitiatorType. Keyed-in payments go through the card-not-present checkpoint.
+CHANNELS = ["POS_INITIATED", "MERCHANT_KEYED_IN", "CARD_NOT_PRESENT"]
+RULE_CHANNEL_MATCHES = {"CARD_PRESENT": {"POS_INITIATED"}, "CARD_NOT_PRESENT": {"MERCHANT_KEYED_IN", "CARD_NOT_PRESENT"}}
+
+ACCOUNT_ACTION_TYPES = ["ACCOUNT_REVIEW", "CAPABILITY_RESTRICTION", "RESERVE", "BLOCK", "RECOVERY"]
+CAPABILITY_DETAILS = ["KEYED_IN", "TERMINAL", "NEW_PRODUCT"]
+
+# Merchant category codes in the synthetic world: code -> (description, industry).
+MCC = {
+    5311: ("Department stores", "Retail"), 5651: ("Family clothing", "Retail"), 5732: ("Electronics", "Retail"),
+    5999: ("Miscellaneous retail", "Retail"), 5411: ("Grocery stores", "Grocery"),
+    5812: ("Restaurants", "Restaurants"), 5814: ("Fast food", "Restaurants"),
+    7299: ("Personal services", "Services"), 7349: ("Cleaning and maintenance", "Services"),
+    8999: ("Professional services", "Services"), 7399: ("Business services", "Services"),
+    8742: ("Management consulting", "Services"), 4722: ("Travel agencies", "Travel"),
+    5045: ("Computer equipment wholesale", "Wholesale"), 4900: ("Utilities", "Utilities"),
+    7372: ("Software and platforms", "Software"),
+}
 
 FINAL_DECISIONS = ["CLEARED", "UPHELD", "NO_ACTION"]
 ACTIONS = ["PREVAILED", "CONTRIBUTING", "SHADOW", "OVERRIDDEN"]

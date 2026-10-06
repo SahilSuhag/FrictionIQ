@@ -53,6 +53,12 @@ class Event:
     hold_hours: float | None = None    # scenario override for measured resolution time
     outcome: str | None = None         # scenario override: CLEARED | UPHELD
     event_id: str = ""
+    # payment API fields, filled in after the rules run (generator/enrich.py)
+    transaction_id: str = ""
+    idempotency_key: str = ""
+    channel: str = ""
+    is_recurring: str = ""
+    sub_merchant_id: str = ""
 
 
 CHECKPOINT_FOR = {

@@ -88,6 +88,16 @@ class Dataset:
 
         # --- decision events
         ev = _read(os.path.join(data_dir, "decision_events.csv"))
+        # A retried request carries the same idempotency key: count it once, keep the first.
+        seen, kept, self.dropped_events = set(), [], set()
+        for e in ev:
+            k = e.get("idempotency_key") or e["event_id"]
+            if k in seen:
+                self.dropped_events.add(e["event_id"])
+                continue
+            seen.add(k)
+            kept.append(e)
+        ev = kept
         self.n_events = len(ev)
         self.event_ids = [e["event_id"] for e in ev]
         self.event_index = {eid: i for i, eid in enumerate(self.event_ids)}
@@ -96,6 +106,11 @@ class Dataset:
         self.event_request = np.array([e["request_type"] for e in ev])
         self.event_t = np.array([hours(e["occurred_at"]) for e in ev])
         self.event_is_payout = np.isin(self.event_request, list(PAYOUT_REQUESTS))
+        self.event_channel = np.array([e.get("channel", "") for e in ev])
+        self.event_recurring = np.array([e.get("is_recurring", "") == "TRUE" for e in ev])
+        self.event_tx = [e.get("transaction_id", "") for e in ev]
+        self.event_sub = [e.get("sub_merchant_id", "") for e in ev]
+        self.has_channel = bool((self.event_channel != "").any())
         self.features = {
             f: np.array([float(e[f]) if e[f] != "" else np.nan for e in ev]) for f in schema.FEATURES
         }
@@ -105,6 +120,7 @@ class Dataset:
         self.fraud_cases = _read(os.path.join(data_dir, "fraud_cases.csv"))
         self.event_fraud = np.zeros(self.n_events, dtype=bool)
         self.client_fraud_count = np.zeros(self.n_clients, dtype=np.int32)
+        self.fraud_cases = [fc for fc in self.fraud_cases if fc["event_id"] not in self.dropped_events]
         for fc in self.fraud_cases:
             self.event_fraud[self.event_index[fc["event_id"]]] = True
             self.client_fraud_count[self.client_index[fc["client_id"]]] += 1
@@ -117,7 +133,7 @@ class Dataset:
                 self.client_disputes[self.client_index[d["client_id"]]] += 1
 
         # --- rule hits
-        hits = _read(os.path.join(data_dir, "rule_hits.csv"))
+        hits = [h for h in _read(os.path.join(data_dir, "rule_hits.csv")) if h["event_id"] not in self.dropped_events]
         self.n_hits = len(hits)
         self.hit_ids = [h["hit_id"] for h in hits]
         self.hit_rule = np.array([self.rule_index[h["rule_id"]] for h in hits], dtype=np.int32)
@@ -152,6 +168,15 @@ class Dataset:
             inc["end_h"] = hours(inc["end"])
             inc["clients"] = [self.client_index[c] for c in inc["affected_clients"].split(";") if c]
 
+        # --- account-level actions and ISV sub-merchants (optional tables)
+        path = os.path.join(data_dir, "account_actions.csv")
+        self.account_actions = _read(path) if os.path.exists(path) else []
+        for a in self.account_actions:
+            a["start_h"] = hours(a["started_at"])
+            a["end_h"] = hours(a["ended_at"]) if a["ended_at"] else None
+        path = os.path.join(data_dir, "sub_merchants.csv")
+        self.sub_merchants = {s["sub_merchant_id"]: s for s in _read(path)} if os.path.exists(path) else {}
+
         self.as_of = AS_OF_HOURS
 
     # ------------------------------------------------------------------
@@ -162,6 +187,8 @@ class Dataset:
             mask &= np.isin(self.event_request, list(rule.requests))
         if rule.entity != "ALL":
             mask &= self.client_entity[self.event_client] == rule.entity
+        if rule.channel and self.has_channel:
+            mask &= np.isin(self.event_channel, list(schema.RULE_CHANNEL_MATCHES[rule.channel]))
         return mask
 
     def evaluate(self, rule: Rule, threshold: float | None = None, disabled: bool = False) -> np.ndarray:
