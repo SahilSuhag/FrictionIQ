@@ -302,6 +302,7 @@ class Sweeper:
             "recommended_index": recommended,
             "base_fraud_caught_rule": base_caught,
             "removed_at_flat": removed_by_point[flat],
+            "removed_at_recommended": removed_by_point[recommended],
         }
 
 

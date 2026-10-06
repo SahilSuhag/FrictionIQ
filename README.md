@@ -36,19 +36,22 @@ window selector and the threshold slider respond instantly.
 ## The screens
 
 They follow the Figma designs' layout and content, in Inter, on a neutral theme: white cards with
-thin grey borders on a light grey page, Liberty Blue `#0C1629` for text, buttons, the active tab
+soft shadows on a light grey page, Liberty Blue `#0C1629` for text, buttons, the active tab
 and the headline card, and Kinder grey `#B5C1C8` for quieter data. The data keeps its own colours:
 indigo `#4B49AC` for friction and the rule at fault, coral for fraud (fraud saved and lost, fraud
 still caught), blue for "Safe to relax" and periwinkle for "Little to gain", coral for worse
-changes and blue for better ones, and the A–F grade colours (red, amber, green), including the
-tints in the count grid. Each screen has a 30 days / 60 days / 1 year window.
+changes and blue for better ones. The A–F grades run from navy (A, least friction) through
+slate and amber to maroon (F, most friction); they are set in `config/frictioniq.json`, and the
+count grid uses a light tint of each. Headline metrics are tiles with an icon, the value, its
+change in a pill and a 12-month sparkline or a meter; clients carry initials avatars tinted by
+grade. Each screen has a 30 days / 60 days / 1 year window.
 
 Each screen is kept to a few headline numbers. Every concept is shown once, and supporting detail
 sits behind a disclosure (**Details**, **How it's calculated**, **Method and success metrics**).
 
 | Screen | Answers | What's on it |
 |---|---|---|
-| **Home** (portfolio) | How big is this, and where do I look first? | A row of six headline metrics, each with its change against the previous window: interventions, payouts held or denied, payout hold time, good clients with heavy friction, then **fraud saved** and **fraud loss**; one key finding, the 12-month trend and the rule behind it, beside two infographic cards: **safe to remove** (interventions that can go with no fraud lost, as a share of all) and two rings showing the fraud cases caught two ways: as a share of all interventions (7.5%, about 1 in 13 found fraud) and as a share of all fraud (92.2% caught); a count grid of clients by friction grade (A–F rows, each tinted in its grade colour, with each grade's client total and share and its interventions and share of all interventions) and good-client band (columns). Click any number and the list of those clients opens under the grid, with the number kept highlighted: transactions, transaction value, interventions and the rule causing most; good clients to look at first; one table of the rules causing the most friction (interventions, fraud cases caught, their ratio, payouts held or denied, room to relax), with the highest ratio and the costliest rule highlighted |
+| **Home** (portfolio) | How big is this, and where do I look first? | A row of six headline metrics, each with its change against the previous window: interventions, payouts held or denied, payout hold time, good clients with heavy friction, then **fraud saved** and **fraud loss**; one key finding, the 12-month trend and the rule behind it, beside two infographic cards: **safe to remove** (a cautious count of interventions on good clients that can go with no fraud lost, as a share of all; see below) and two rings showing the fraud cases caught two ways: as a share of all interventions (7.5%, about 1 in 13 found fraud) and as a share of all fraud (92.2% caught); a count grid of clients by friction grade (A–F rows, each tinted in its grade colour, with each grade's client total and share and its interventions and share of all interventions) and good-client band (columns). Click any number and the list of those clients opens under the grid, with the number kept highlighted: transactions, transaction value, interventions and the rule causing most; good clients to look at first; one table of the rules causing the most friction (interventions, fraud cases caught, their ratio, payouts held or denied, room to relax), with the highest ratio and the costliest rule highlighted |
 | **Client friction detail**, with the client pane | Is this good client being over-challenged, and by which rule? | On the left, a collapsible pane of every client grouped by friction grade (F to A), filterable by good-client history, client type (Enterprise, Middle Market, SMB, ISV, Scotia) and region (CA, US, EMEA, APAC), with a name or ID search; each entry shows its score, history, type and region. Picking a client switches the view; the Clients tab opens on the good (established) client with the most friction. The view itself: one-sentence summary; friction grade with its range across weightings; interventions this month against last ("3 → 9"); payout hold time (how long its payouts sat on hold for review, added up); payouts denied; share from the top rule; percentile among similar clients; one timeline lane per rule; intervention log with the points each intervention adds and the total; good-client evidence; "why this rule keeps firing" plot; how the score is calculated, collapsed until asked for |
 | **Rule tradeoff explorer** | How much friction does relaxing this rule remove, and what fraud does it cost? | Each rule by its readable name, with its one-line description under the title. On the left, a collapsible pane of rules grouped by checkpoint (client onboarding, product onboarding, pre-auth and pre-capture card present or not present, pre-settlement, pre-payout), filterable by checkpoint, client type and region, with a search; each rule shows its description, interventions and room-to-relax tag. Client type and region keep the rules that intervened on those clients in the window, with their counts for those clients; the curve and numbers stay portfolio-wide; the curve (friction removed as a band across weightings, fraud still caught as a line, the safe range shaded and named); a threshold slider aligned under the x-axis (or type a value); three numbers against today (interventions removed, payouts no longer held or denied, fraud still caught); the plain-language sentence; a shadow-test proposal you can draft and copy. **Details** holds the full dollar ledger, the option to apply the change only to established high-friction clients, and the method |
 
@@ -61,12 +64,20 @@ compiles it in two ways that appear throughout the screens:
   hits alone: interventions, legitimate payouts held or denied ($), payout hold time (days payouts sat on hold for
   review, added up), and friction that can be removed at no fraud cost, each against the previous
   window. Two fraud metrics sit beneath them, also against the previous window:
-  - **Fraud saved**: confirmed fraud a live rule denied or held, in payout dollars, with the
-    count of cases ($165k, 95 of 103 cases).
-  - **Fraud loss**: confirmed fraud no live rule stopped ($2,469, 8 cases).
+  - **Fraud saved**: confirmed fraud a live rule denied or held, in dollars (the payout,
+    settlement or capture it was on), with the count of cases ($1.38M, 95 of 103 cases).
+  - **Fraud loss**: confirmed fraud no live rule stopped ($197k, 8 cases).
 
-  Together they make up all confirmed fraud in the window. Cases with no payout amount, such as
-  boarding fraud, count as cases but add no dollars. The full ledger (interventions that found no
+  Together they make up all confirmed fraud in the window. Cases with no amount, such as
+  boarding fraud, count as cases but add no dollars.
+
+  **Safe to remove** is deliberately cautious, for an audience that owns the fraud numbers. The 7
+  rules with room to relax move only to their *recommended* setting (not the far end of their
+  safe range), and only for good clients carrying heavy friction: established clients above the
+  75th percentile of friction, the same segment policy as the rule page. Everyone else keeps
+  today's rules, and every fraud case caught today is still caught: **138 interventions (11%) from
+  19 good clients** in the last 30 days. Relaxing every rule as far as is safe for every client
+  would remove 917; that upper bound is in **Method and success metrics**. The full ledger (interventions that found no
   fraud, payouts held and denied, payout hold time, ops review hours, fraud caught) is under
   **Details → Counting in dollars** on each rule page, comparing today with the selected
   threshold. It includes the rule's ratio of interventions to fraud cases caught, and legitimate
@@ -120,7 +131,8 @@ On seed 4127:
 | Measure | Baseline | Result |
 |---|---|---|
 | Fraud caught and missed | 95 caught, 8 missed of 103 | 95 caught after relaxing every rule as far as is safe (unchanged) |
-| Friction removed at zero capture cost | 0 (not measured today) | **917 interventions from 227 clients**, from the 7 rules tagged "Safe to relax" or "Little to gain" |
+| Safe to remove (the Home headline) | 0 (not measured today) | **138 interventions (11%) from 19 good clients**, fraud caught unchanged |
+| Upper bound: every client, every rule as far as is safe | 0 (not measured today) | 917 interventions from 227 clients, from the 7 rules tagged "Safe to relax" or "Little to gain" |
 | Challenge reduction, established band | current thresholds | established-band friction cut median **81% (80–82%) across 300 weightings** |
 | Clients above the high-friction line | 78 | 10; **no client's friction rises** |
 | Range width across weightings | n/a | widest spread in a safe range is 15.6 percentage points |
@@ -266,6 +278,12 @@ tests/        PRD scenarios, design labels, invariants
   with a grade of E. The PRD says outage friction is never added to a score, so its score is low,
   it grades A, and it doesn't make that list. The incident shows as a tag and a note on its client
   screen.
+- **Fraud amounts.** Fraud moves far more money than a small client's ordinary business:
+  account-takeover payouts of $9k–45k, cash-outs around $15k, and bust-out settlements and other
+  fraudulent captures at 15–90 times the client's usual batch. Cash-out fraud still starts at
+  $1,850, and mule, refund and burst payouts stay under $100, so every rule fires on exactly the
+  same events; the larger amounts are drawn or scaled without extra random draws, so the rest of
+  the world is unchanged.
 - **Controlled edge cases.** Every 15 days, each fraud type places one case just past the point
   where its rule's safe range should end. The PRD calls for fraud labels "from controlled
   scenarios". Without these, a 30-day window holds so few cases per rule that the labels would

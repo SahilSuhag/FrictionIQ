@@ -277,7 +277,7 @@ def fraud_episode(rng: random.Random, c: Client, ftype: str, start: float, n: in
             f = legit_features(rng, c, rtype)
             if ftype == "cash_out":
                 f["amount"] = round(rng.uniform(1850, 2150) if rng.random() < 0.3
-                                    else max(2150.0, rng.lognormvariate(math.log(3200), 0.3)), 2)
+                                    else max(2150.0, rng.lognormvariate(math.log(15000), 0.45)), 2)
             else:
                 f["amount"] = round(rng.uniform(40, 99), 2)
             f["counterparty_age_days"] = rng.randint(30, 400)
@@ -288,7 +288,7 @@ def fraud_episode(rng: random.Random, c: Client, ftype: str, start: float, n: in
         if ftype == "ato_device":
             rtype = "PAYOUT"
             f = legit_features(rng, c, rtype)
-            f["amount"] = round(rng.uniform(2000, 9000), 2)
+            f["amount"] = round(rng.uniform(9000, 45000), 2)
             f["counterparty_age_days"] = rng.randint(30, 400)
             u = rng.random()
             # takeovers cash out just inside the 48-hour window the rule was tuned to
@@ -332,8 +332,22 @@ def fraud_episode(rng: random.Random, c: Client, ftype: str, start: float, n: in
                          refund_ratio_30d=min(f["refund_ratio_30d"], 0.1))
         else:
             raise ValueError(ftype)
+        _scale_fraud_amount(f, ftype, rtype)
         events.append(Event(c.client_id, CHECKPOINT_FOR[rtype], rtype, t, f, fraud_type=ftype))
     return events
+
+
+# Fraud moves far more money than the client's ordinary business: a bust-out settles or
+# captures dozens of times its usual batch. Scaling after the draw keeps the random stream
+# (and so every other client and event) unchanged.
+FRAUD_AMOUNT_SCALE = {("velocity_burst", "SETTLEMENT"): 15, ("geo_card_testing", "CAPTURE"): 45,
+                      ("stealth", "CAPTURE"): 90}
+
+
+def _scale_fraud_amount(f: dict, ftype: str, rtype: str) -> None:
+    k = FRAUD_AMOUNT_SCALE.get((ftype, rtype))
+    if k and "amount" in f:
+        f["amount"] = round(f["amount"] * k, 2)
 
 
 # Controlled edge cases: where each kind of fraud starts, placed on a fixed cadence so
@@ -347,7 +361,7 @@ EDGE_CASES = {
                                           "counterparty_age_days": r.randint(30, 400)}),
     "doc_fraud": ("SUBMERCHANT_BOARDING", lambda r: {"doc_mismatch_score": round(r.uniform(0.801, 0.804), 3)}),
     "ato_device": ("PAYOUT", lambda r: {"hours_since_device_change": round(r.uniform(47.1, 47.9), 1),
-                                        "amount": round(r.uniform(2000, 9000), 2),
+                                        "amount": round(r.uniform(9000, 45000), 2),
                                         "counterparty_age_days": r.randint(30, 400)}),
     "mule_counterparty": ("PAYOUT", lambda r: {"counterparty_age_days": 10, "amount": round(r.uniform(40, 99), 2)}),
     "geo_card_testing": ("CAPTURE", lambda r: {"geo_mismatch_share": round(r.uniform(0.665, 0.669), 3),
@@ -359,6 +373,7 @@ def edge_fraud(rng: random.Random, c: Client, ftype: str, t: float) -> Event:
     rtype, feats = EDGE_CASES[ftype]
     f = legit_features(rng, c, rtype) if rtype != "SUBMERCHANT_BOARDING" else {}
     f.update(feats(rng))
+    _scale_fraud_amount(f, ftype, rtype)
     return Event(c.client_id, CHECKPOINT_FOR[rtype], rtype, t, f, fraud_type=ftype)
 
 

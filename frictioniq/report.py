@@ -122,6 +122,12 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
             removed_all |= curves[r.rule_id]["removed_at_flat"]
         ra = sw.evaluate(removed_all, detail=True)
         prev_after, client_after = ra.pop("_prevailing"), ra.pop("_client")
+        # The headline is the cautious version: the same rules moved only to their recommended
+        # setting, and only for good clients carrying heavy friction (the segment policy).
+        removed_good = np.zeros(ds.n_hits, dtype=bool)
+        for r in relax:
+            removed_good |= curves[r.rule_id]["removed_at_recommended"]
+        rg = sw.evaluate(removed_good & eligible[ds.hit_client])
         est_hits = established[ds.hit_client] & wb["mask"]
         est_before = base.F[base.prevailing & legit & est_hits].sum(0)
         est_after = base.F[prev_after & legit & est_hits].sum(0)
@@ -214,15 +220,16 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
             ev = ds.event_fraud & (ds.event_t >= start) & (ds.event_t < end)
             caught = np.unique(ds.hit_event[base.prevailing & ds.hit_fraud & (ds.hit_t >= start) & (ds.hit_t < end)])
             caught = caught[ev[caught]]
-            total_usd = amt_ev[ev].sum()
-            return {"caught": int(caught.size), "total": int(ev.sum()), "caught_usd": _r(amt_ev[caught].sum(), 0),
-                    "total_usd": _r(total_usd, 0), "lost_usd": _r(total_usd - amt_ev[caught].sum(), 0)}
+            caught_usd, total_usd = _r(amt_ev[caught].sum(), 0), _r(amt_ev[ev].sum(), 0)
+            # loss from the rounded figures, so saved + loss always equals the total shown
+            return {"caught": int(caught.size), "total": int(ev.sum()), "caught_usd": caught_usd,
+                    "total_usd": total_usd, "lost_usd": total_usd - caught_usd}
 
         start = ds.as_of - days * 24
         portfolio[wkey] = {
             "ledger": sweep.ledger(ds, prev_w & legit, amount),
             "fraud": fraud_split(start, ds.as_of + 1),
-            "freed": ra["freed"],
+            "freed": rg["freed"],
             # the previous window of the same length, for "vs previous period" comparisons
             "prev": None if ds.as_of - 2 * days * 24 < 0 else {
                 "fraud": fraud_split(start - days * 24, start),
@@ -238,8 +245,10 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
             "interventions": int(prev_w.sum()),
             "clients_interrupted": int((wb["count"] > 0).sum()),
             "good_clients_heavy_friction": int(good_heavy),
-            "free_to_remove": ra["interventions_removed"],
-            "free_to_remove_clients": ra["clients_affected"],
+            "free_to_remove": rg["interventions_removed"],
+            "free_to_remove_clients": rg["clients_affected"],
+            "free_to_remove_rules": len(relax),
+            "eligible_clients": int(eligible.sum()),
             "grade_counts": grade_counts,
             "incidents": {"count": len(in_win_inc), "clients_affected": len(inc_clients)},
             "p75": _r(p75, 1),
@@ -251,7 +260,8 @@ def build(ds: Dataset, cfg: dict, demo: dict | None = None) -> dict:
         base_caught = int(np.unique(ds.hit_event[base.prevailing & ds.hit_fraud & wb["mask"]]).size)
         metrics[wkey] = {
             "fraud": {"total": total_fraud, "caught": base_caught, "missed": total_fraud - base_caught,
-                      "caught_after_relax_all": ra["fraud_caught_ruleset"]},
+                      "caught_after_relax_all": ra["fraud_caught_ruleset"],
+                      "caught_after_relax_good": rg["fraud_caught_ruleset"]},
             "free_by_rule": [{
                 "rule_id": r.rule_id, "label": curves[r.rule_id]["label"], "verdict": curves[r.rule_id]["verdict"],
                 "expression": sweep.expression_at(r, grids[r.rule_id][curves[r.rule_id]["flat_index"]]),

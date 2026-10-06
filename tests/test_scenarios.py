@@ -229,6 +229,17 @@ def test_curves_are_monotone_and_fraud_is_measured_on_the_whole_population(world
     assert m["caught_after_relax_all"] == m["caught"]
 
 
+def test_safe_to_remove_is_the_cautious_estimate(world):
+    """The headline counts good clients only, at recommended settings: a small share, no fraud lost."""
+    _, _, res, _, _ = world
+    for wkey in ("30d", "60d", "1y"):
+        p, m = res["portfolio"][wkey], res["metrics"][wkey]
+        assert m["fraud"]["caught_after_relax_good"] == m["fraud"]["caught"]
+        assert 0 < p["free_to_remove"] < m["relax_all"]["interventions_removed"]
+        assert p["free_to_remove"] < 0.15 * p["interventions"]
+        assert 0 < p["free_to_remove_clients"] <= p["eligible_clients"]
+
+
 def test_volumes(world):
     """Within the PRD where the 12-month history allows it; see README for the rest."""
     _, _, res, _, rules = world
