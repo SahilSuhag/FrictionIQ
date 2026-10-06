@@ -614,13 +614,6 @@
     && (!state.query || `${c.name} ${c.client_id}`.toLowerCase().includes(state.query.toLowerCase()));
   const gradeCutoff = (g) => { const [lo, hi] = D.grades.cutoffs[g]; return hi == null ? `${lo} and above` : `${lo}–${hi}`; };
 
-  // Keep the selected entry of a scrolling pane in view.
-  function showCurrent(pane) {
-    const cur = pane.querySelector('[aria-current="true"]');
-    if (!cur || pane.scrollHeight <= pane.clientHeight) return;
-    const pr = pane.getBoundingClientRect(), cr = cur.getBoundingClientRect();
-    if (cr.top < pr.top + 40 || cr.bottom > pr.bottom - 10) pane.scrollTop += cr.top - pr.top - pr.height / 3;
-  }
   const defaultClient = () => (heavyClients()[0] || clientById[demo.open_client] || clients[0]).client_id;
 
   // The client pane: every client grouped by friction grade, filterable, beside the client view.
@@ -661,8 +654,7 @@
         ${nOn || state.query ? '<button type="button" class="link-btn" id="pane-clear">Clear filters</button>' : ""}</details>
       <div class="pane-list">${groups || '<p class="muted pane-empty">No clients match these filters.</p>'}</div>`;
 
-    pane.scrollTop = keep;
-    showCurrent(pane);
+    pane.scrollTop = keep;   // opens at the top: search, filters and the F group first
     document.getElementById("pane-toggle").onclick = () => { state.paneOpen = false; renderClient(); };
     const q = document.getElementById("pane-q");
     q.oninput = () => { state.query = q.value; renderPane(); const n = document.getElementById("pane-q"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
